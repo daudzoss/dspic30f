@@ -1,2 +1,1 @@
-# dspic30f
-I2S interfacing and digital filtering/DSP implementation platform
+getting an old version of ASM30 built on a modern Linux system
