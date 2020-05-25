@@ -13,6 +13,7 @@ if [ $# -gt 1 ]
 then
  wget $2 || echo "arg2 may be -V, or URL to an mplabalc30 tarball if not v3_02"
 else
+ rm mplabalc30v*.t*gz
  wget http://ww1.microchip.com/downloads/en/DeviceDoc/mplabalc30v3_02.tar.gz
 fi
 rm -rf acme/ c30_resource/

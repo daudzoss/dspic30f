@@ -61,3 +61,6 @@ done
 rmdir -v --ignore-fail-on-non-empty $DIR
 rmdir -v --ignore-fail-on-non-empty $INSTALLDIR/share/locale
 rmdir -v --ignore-fail-on-non-empty $INSTALLDIR/share
+
+rm -r $INSTALLDIR/pic30-unknown-coff
+rm -r $INSTALLDIR/pic30-unknown-elf
