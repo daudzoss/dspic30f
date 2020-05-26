@@ -25,3 +25,10 @@ cd acme
 make # will fail for missing Makefile target
 cp ../Makefile.new libiberty/testsuite/Makefile
 make
+if [ $# ]
+then
+    cp ../c30_resource/src/c30/c30_device.info $1/bin
+else
+    cp ../c30_resource/src/c30/c30_device.info /usr/local/bin
+fi
+
