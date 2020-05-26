@@ -23,7 +23,7 @@ for dosfile in $(find acme -print); do fromdos $dosfile 2> /dev/null; done
 for dosfile in $(find c30_resource -print);do fromdos $dosfile 2> /dev/null;done
 
 cd acme
-if [ x$(uname -p | awk '/64$/ { print 1 }')x -eq x1x ] # amd64, arm64, x86_64, etc.
+if [ 0$(uname -p | awk '/64$/ { print 1 }') -eq 1 ] # amd64, arm64, x86_64, etc.
 then
     for badfile in $(grep -lr 0xC0007FFF *)
     do
