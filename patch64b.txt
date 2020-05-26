@@ -1,0 +1,51 @@
+--- acme-unpatched/bfd/coff-pic30.c 2010-03-15 22:20:59.000000000 -0700
++++ acme/bfd/coff-pic30.c 2010-03-15 22:48:23.000000000 -0700
+@@ -2161,7 +2161,7 @@
+       case R_PIC30_PCREL_BRANCH:
+       case R_PIC30_BRANCH_ABSOLUTE:
+         /* valid range is [-32768..32767] and not [-2, -1, 0] */
+-        if ((relocation > 0x7FFF) && ~(relocation | 0xC0007FFF))
++        if ((relocation > 0x7FFF) && ~(relocation | 0xFFFFFFFFC0007FFFull))
+           {
+             *error_msg = (char *) malloc(BUFSIZ);
+             sprintf(*error_msg,
+@@ -2174,7 +2174,7 @@
+       case R_PIC30_PCREL_DO:
+       case R_PIC30_DO_ABSOLUTE:
+         /* valid range is [-32768..32767] and not [-2, -1, 0] */
+-        if ((relocation > 0x7FFF) && ~(relocation | 0xC0007FFF))
++        if ((relocation > 0x7FFF) && ~(relocation | 0xFFFFFFFFC0007FFFull))
+           {
+             *error_msg = (char *) malloc(BUFSIZ);
+             sprintf(*error_msg,
+--- acme-unpatched/bfd/elf32-pic30.c 2010-03-15 22:20:59.000000000 -0700
++++ acme/bfd/elf32-pic30.c 2010-03-15 22:49:01.000000000 -0700
+@@ -2185,7 +2185,7 @@
+       case R_PIC30_PCREL_BRANCH:
+       case R_PIC30_BRANCH_ABSOLUTE:
+         /* valid range is [-32768..32767] and not [-2, -1, 0] */
+-        if ((relocation > 0x7FFF) && ~(relocation | 0xC0007FFF))
++        if ((relocation > 0x7FFF) && ~(relocation | 0xFFFFFFFFC0007FFFull))
+           {
+             *error_msg = (char *) malloc(BUFSIZ);
+             sprintf(*error_msg,
+@@ -2198,7 +2198,7 @@
+       case R_PIC30_PCREL_DO:
+       case R_PIC30_DO_ABSOLUTE:
+         /* valid range is [-32768..32767] and not [-2, -1, 0] */
+-        if ((relocation > 0x7FFF) && ~(relocation | 0xC0007FFF))
++        if ((relocation > 0x7FFF) && ~(relocation | 0xFFFFFFFFC0007FFFull))
+           {
+             *error_msg = (char *) malloc(BUFSIZ);
+             sprintf(*error_msg,
+--- acme-unpatched/bfd/pic30-relocs.c 2010-03-15 22:20:59.000000000 -0700
++++ acme/bfd/pic30-relocs.c 2010-03-15 22:53:33.000000000 -0700
+@@ -368,7 +368,7 @@
+       case R_PIC30_PCREL_DO:
+       case R_PIC30_DO_ABSOLUTE:
+         /* valid range is [-32768..32767] and not [-2, -1, 0] */
+-        if ((relocation > 0x7FFF) && ~(relocation | 0xC0007FFF))
++        if ((relocation > 0x7FFF) && ~(relocation | 0xFFFFFFFFC0007FFFull))
+           rc = reloc_overflow;
+         if (((relocation & 0xFFFF) == 0xFFFE) ||
+             ((relocation & 0xFFFF) == 0xFFFF) ||

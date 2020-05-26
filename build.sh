@@ -16,16 +16,29 @@ else
  rm mplabalc30v*.t*gz
  wget http://ww1.microchip.com/downloads/en/DeviceDoc/mplabalc30v3_02.tar.gz
 fi
+
 rm -rf acme/ c30_resource/
 tar xvzf *.t*gz || exit 3
 for dosfile in $(find acme -print); do fromdos $dosfile 2> /dev/null; done
 for dosfile in $(find c30_resource -print);do fromdos $dosfile 2> /dev/null;done
+
 cd acme
+if [ $(uname -p | awk '/64$/ { exit 1 }') ] # amd64, arm64, x86_64, etc.
+then
+    echo 'not a 64-bit architecture; no patches to constants required'
+else
+    for badfile in $(grep -lr 0xC0007FFF *)
+    do
+	mv -v $badfile $badfile.bad
+	sed 's/0xC0007FFF/0xFFFFFFFFC0007FFFull/' $badfile.bad > $badfile
+    done
+fi
+
 ./configure pic30-unknown-elf --prefix=$1 # or, change to pic30-unknown-coff
 make # will fail for missing Makefile target
 cp ../Makefile.new libiberty/testsuite/Makefile
 make
-if [ $# ]
+if [ $# -gt 0 ]
 then
     cp ../c30_resource/src/c30/c30_device.info $1/bin
 else
