@@ -14,6 +14,7 @@ do
     rm -v $INSTALLDIR/bin/$binfile
     rm -v $INSTALLDIR/man/man1/$binfile.1
 done
+rm -v $INSTALLDIR/bin/c30_device.info
 rm -v $INSTALLDIR/man/man1/bin2hex.1
 rm -v $INSTALLDIR/man/man1/dlltool.1
 rm -v $INSTALLDIR/man/man1/nlmconv.1
