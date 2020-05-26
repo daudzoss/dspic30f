@@ -23,15 +23,15 @@ for dosfile in $(find acme -print); do fromdos $dosfile 2> /dev/null; done
 for dosfile in $(find c30_resource -print);do fromdos $dosfile 2> /dev/null;done
 
 cd acme
-if [ $(uname -p | awk '/64$/ { exit 1 }') ] # amd64, arm64, x86_64, etc.
+if [ x$(uname -p | awk '/64$/ { print 1 }')x -eq x1x ] # amd64, arm64, x86_64, etc.
 then
-    echo 'not a 64-bit architecture; no patches to constants required'
-else
     for badfile in $(grep -lr 0xC0007FFF *)
     do
 	mv -v $badfile $badfile.bad
 	sed 's/0xC0007FFF/0xFFFFFFFFC0007FFFull/' $badfile.bad > $badfile
     done
+else
+    echo 'not a 64-bit architecture; no patches to constants required'
 fi
 
 ./configure pic30-unknown-elf --prefix=$1 # or, change to pic30-unknown-coff
@@ -40,6 +40,7 @@ cp ../Makefile.new libiberty/testsuite/Makefile
 make
 if [ $# -gt 0 ]
 then
+    mkdir $1/bin
     cp ../c30_resource/src/c30/c30_device.info $1/bin
 else
     cp ../c30_resource/src/c30/c30_device.info /usr/local/bin
