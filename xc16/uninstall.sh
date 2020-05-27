@@ -7,7 +7,7 @@ then
 else
     INSTALLDIR=/usr/local/bin
 fi
-rm -v $INSTALLDIR/c30_device.info
+rm -v $INSTALLDIR/../c30_device.info
 for binfile in elf-ar elf-as elf-bin2hex elf-objdump elf-strip
 do
     rm -v $INSTALLDIR/$binfile
