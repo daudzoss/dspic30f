@@ -15,7 +15,7 @@ then
 else
     mkdir $DEST
 fi
-cp -v $ORIG/c30_device.info $DEST
+cp -v $ORIG/c30_device.info $DEST/..
 cp -v $ORIG/bin/elf-* $DEST
 
 
