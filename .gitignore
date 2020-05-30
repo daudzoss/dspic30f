@@ -1,4 +1,5 @@
 *~
 *.t*gz
+*.pdf
 acme
 c30_resource
