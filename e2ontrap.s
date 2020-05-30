@@ -40,6 +40,23 @@ EE	equ	0x0000
 	
 	;; look for registers as indirect destination
 
+	;; w0 holds src word address, w1 holds dest word address
+adrw0w1:
+	btsc	w0,#0		;
+	bra	srcadok		;
+
+
+srcadok:
+	btsc	w1,#0		;
+	bra	dstadok		;
+	
+dstadok:
+	;; now perform the operation in the original opcode
+
+	;; perform any required pre-increment or decrement
+
+	;; perform any required post-increment or decrement
+
 	;; clear the fault bit before returning to prevent a bounceback
 	bclr	0x0080,#3	;  INTCON1 &= ~(1 << ADDRERR);
 .if SD_CACHE_WRITEBACK
@@ -71,3 +88,4 @@ autocpy:
 	rcall	coo1cpy		; coo1cpy(&ee_base);
 alldone:
 	goto	alldone		;}
+
