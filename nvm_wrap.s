@@ -29,16 +29,17 @@ EE	equ	0x0000
 
 	;; as there's no SFR reflecting the EA causing the fault,
 	;; will need to completely decode the instruction here :-(
-	mov	[w15-2],w3	;  uint16_t flash* w3w2 = (sp[-1] << 16) | sp[-2];
+	mov	[w15-2],w3	;  uint32_t flash* w3w2 = (sp[-1] << 16) | sp[-2];
 	mov	[w15-4],w2	;
 	mov	#0x0032,w1	;  uint16_t* w1 = &TBLPAG;
 	mov	[w1],[w15++]	;  *sp++ = *w1; // stack TBLPAG7..0 to preserve
-	and	#0x7f,w3	;
+;	and	#0x007f,w3	;
 	mov	w3,[w1]		;  *w1 = (w3w2 >> 16) & 0x7f; // user (not config)
-	tblrdh	[w2],w3		;  uint16_t w3 = , w2 = ;
-	tblrdl	[w2],w2		;
-;can't use PSV for high byte, need TBLRD!!!	mov	w3,[w1]		;  *w1 = w2 >> 16;
+	tblrdh	[w2],w3		;  uint16_t w3 = *w3w2 >> 16;
+	tblrdl	[w2],w2		;  uint16_t w2 = *w3w2 & 0x00ffff;;
 	
+	;; look for registers as indirect destination
+
 	;; clear the fault bit before returning to prevent a bounceback
 	bclr	0x0080,#3	;  INTCON1 &= ~(1 << ADDRERR);
 .if SD_CACHE_WRITEBACK
