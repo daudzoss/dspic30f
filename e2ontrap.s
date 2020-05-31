@@ -6,7 +6,7 @@
 ;;; data memory segment so that it refers automatically to EEPROM (for dsPIC30
 ;;; the area between 0x2800 and the PSV window at 0x8000 is always unmapped)
 ;;;
-;;; using PUSH.S shadow registers to avoid stack use
+;;; can't utilize PUSH.S shadow registers to speed entry/exit since not readable
 	org	0x000000
 	goto	main
 
@@ -23,22 +23,103 @@ EE	equ	0x0001
 .else
 EE	equ	0x0000
 .endif	
-	push.s			;void adrtrap(uint16_t* sp) {
-	btss	0x0080,#3	;
-	bra	adrdone		; if (INTCON1 & (1 << ADDRERR)) {
+	mov.d	w0,[w15++]	;void adrtrap(uint16_t* sp) {
+	mov.d	w2,[w15++]	; *sp++ = w0, *sp++ = w1;
+	btss	0x0080,#3	; *sp++ = w2, *sp++ = w3;
+	bra	adrdone		; if (INTCON1 & (1 << ADDRERR)) { // is bus trap
 
 	;; as there's no SFR reflecting the EA causing the fault,
 	;; will need to completely decode the instruction here :-(
-	mov	[w15-2],w3	;  uint32_t flash* w3w2 = (sp[-1] << 16) | sp[-2];
-	mov	[w15-4],w2	;
+	mov	[w15-10],w3	;  uint32_t* w3w2 = (sp[-5] << 16) | sp[-6];
+	mov	[w15-12],w2	;
 	mov	#0x0032,w1	;  uint16_t* w1 = &TBLPAG;
 	mov	[w1],[w15++]	;  *sp++ = *w1; // stack TBLPAG to preserve
-	mov	w3,[w1]		;  *w1 = (w3w2 >> 16) & 0x7f; // user (not config)
-	tblrdh	[w2],w3		;  uint16_t w3 = *w3w2 >> 16;
-	tblrdl	[w2],w2		;  uint16_t w2 = *w3w2 & 0x00ffff;;
+	mov	w3,[w1]		;  *w1 = (w3w2 >> 16) & 0x7f; // user (not cfg)
+	tblrdh	[w2],w3		;  uint16_t w3 = *w3w2 >> 16; // opcode in w3
+	tblrdl	[w2],w2		;  uint16_t w2 = *w3w2 & 0x00ffff;; // arg in w2
 	
-	;; look for registers as indirect destination
+	;; march through all opcodes, looking for register-indirect destinations
+op0x1X:	
+	lsr	w3,#4,w0	;
+	mov	#0x0001,w1	;
+	cpseq	w0,w1		;
+	bra	op0x2X		;  if (w3 & 0xfff0 == SUBR_BR) { //SUBR or SUBBR
+	rcall	rewrite		;   rewrite(&w0, &w1, w2, &w3);
 
+rewrite:	
+	mov	0x0060,w1	;void rewrite(uint16_t* w0/*d*/,uint16_t* w1,//s
+	and	w1,w2,w0	;             uint16_t w2, uint16_t* w3) {//base
+;;;	rcall	sindir		; *w1 = sindir(*w0, *w1, w2) >> 16;// Ws into w1
+;;;	rcall	dindir		; *w0 = dindir(w2); // Wd into w0
+	sl	w2,#1,w2	; *w3 = 2 * ((*w3 << 1) | (w2 >> 15)); // base reg
+	rlc	w3,#2,w3	; w2 <<= 1;
+	and	#0x01e,w3	; *w3 &= 0x01e; // w3 now the memory mapped base
+	bclr	0x0042,#0	;
+	btsc	w3,#1		;
+	bset	0x0042,#0	;
+	rrc	w2,#1,w2	; w2 = (w2 >> 1) | (*w3 << 14); // back unchanged
+	mov	[w3],w3		; *w3 = **w3;
+	return			;} // rewrite()
+	
+sindir:
+	cpseq	w0,w1		;uint32_t sindir(uint16_t w0, uint16_t w1,
+	bra	sdirect		;                uint16_t w2 /*instr 16..0*/) {
+	lsr	w2,#4,w0	; if (w0 == w1)
+	and	#0x007,w0	;
+	bra	z,srcdone	;  if (w2 & 0x0070) { // indirect addressing
+
+	mov	w2,[w15++]?
+	bra	srcdone		;
+sdirect:	
+	and	w2,#0x1f,w1	;
+srcdone:
+	return			;}
+
+	
+op0x2X:	
+
+
+op0x01b:	
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
+op0x:	
+	mov	#,w0		;
+	cpseq	w3,w0		;
+	bra	op0x		;
 	;; w0 holds src word address, w1 holds dest word address
 adrw0w1:
 	btsc	w0,#0		;
@@ -71,11 +152,12 @@ poptpag:
 .if SD_CACHE_WRITEBACK
 .endif
 	mov	#0x0032,w1	;  w1 = &TBLPAG;
-	mov	[--w15],[w1]	;  *--w15 = *w1; // TBLPAG restored
+	mov	[--w15],[w1]	;  *w1 = *--w15; // TBLPAG restored
 adrdone:
 	;; clear the fault bit before returning to prevent a bounceback
 	bclr	0x0080,#3	;  INTCON1 &= ~(1 << ADDRERR);
-	pop.s			; } // stack and status bits restored
+	mov.d	[--w15],w2	;  w3 = *--sp, w2 = *--sp;
+	mov.d	[--w15],w0	;  w1 = *--sp, w0 = *--sp; } 
 	retfie			;} // adrtrap()
 
 coo1cpy:	
