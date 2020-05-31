@@ -46,36 +46,6 @@ op0x1X:
 	bra	op0x2X		;  if (w3 & 0xfff0 == SUBR_BR) { //SUBR or SUBBR
 	rcall	rewrite		;   rewrite(&w0, &w1, w2, &w3);
 
-rewrite:	
-	mov	0x0060,w1	;void rewrite(uint16_t* w0/*d*/,uint16_t* w1,//s
-	and	w1,w2,w0	;             uint16_t w2, uint16_t* w3) {//base
-;;;	rcall	sindir		; *w1 = sindir(*w0, *w1, w2) >> 16;// Ws into w1
-;;;	rcall	dindir		; *w0 = dindir(w2); // Wd into w0
-	sl	w2,#1,w2	; *w3 = 2 * ((*w3 << 1) | (w2 >> 15)); // base reg
-	rlc	w3,#2,w3	; w2 <<= 1;
-	and	#0x01e,w3	; *w3 &= 0x01e; // w3 now the memory mapped base
-	bclr	0x0042,#0	;
-	btsc	w3,#1		;
-	bset	0x0042,#0	;
-	rrc	w2,#1,w2	; w2 = (w2 >> 1) | (*w3 << 14); // back unchanged
-	mov	[w3],w3		; *w3 = **w3;
-	return			;} // rewrite()
-	
-sindir:
-	cpseq	w0,w1		;uint32_t sindir(uint16_t w0, uint16_t w1,
-	bra	sdirect		;                uint16_t w2 /*instr 16..0*/) {
-	lsr	w2,#4,w0	; if (w0 == w1)
-	and	#0x007,w0	;
-	bra	z,srcdone	;  if (w2 & 0x0070) { // indirect addressing
-
-	mov	w2,[w15++]?
-	bra	srcdone		;
-sdirect:	
-	and	w2,#0x1f,w1	;
-srcdone:
-	return			;}
-
-	
 op0x2X:	
 
 
@@ -120,6 +90,7 @@ op0x:
 	mov	#,w0		;
 	cpseq	w3,w0		;
 	bra	op0x		;
+	
 	;; w0 holds src word address, w1 holds dest word address
 adrw0w1:
 	btsc	w0,#0		;
@@ -160,6 +131,58 @@ adrdone:
 	mov.d	[--w15],w0	;  w1 = *--sp, w0 = *--sp; } 
 	retfie			;} // adrtrap()
 
+addrmod:
+	lsr	w2,#4,w0	;uint16_t addrmod(uint16_t w2) {
+	and	#0x007,w0	; w0 = w2 >> 4;
+	bra	w0		; switch (w0 & 0x0070) { // src indirect addr
+	goto	direct		;  case 0: return direct(w2);
+	goto	indir		;  case 1: return indir(w2);
+	goto	postdec		;  case 2: return postdec(w2);
+	goto	postinc		;  case 3: return postinc(w2);
+	goto	predec		;  case 4: return predec(w2);
+	goto	preinc		;  case 5: return preinc(w2);
+	nop			; }        return 0;
+	retlw	#0,w0		;} // addrmod()
+
+rewrite:	
+	mov	0x0060,w1	;void rewrite(uint16_t* w0/*d*/,uint16_t* w1,//s
+	and	w1,w2,w0	;             uint16_t w2, uint16_t* w3) {//base
+	cpseq	w0,w1		;
+	bra	sconst		; if (w2 & 0x0060 != 0x0060) // src not const.
+	rcall	addrmod		;  *w1 = addrmod(w2);
+	bra	srcdone		; else
+sconst:	
+	and	w2,#0x1f,w0	;  *w1 = w2 & 0x1f; // constant encoded in instr
+srcdone:
+	mov	w0,w1		; // now handle the base register (FIXME: w4-w14 only!)
+
+	rrnc	w2,w2		;
+	rrnc	w2,w2		;
+	rrnc	w2,w2		;
+	rrnc	w2,w2		;
+	rrnc	w2,w2		;
+	rrnc	w2,w2		;
+	rrnc	w2,w2		;
+	rcall	addrmod		; *w0 = addrmod(w2 << 7);
+	rlnc	w2,w2		;
+	rlnc	w2,w2		;
+	rlnc	w2,w2		;
+	rlnc	w2,w2		;
+	rlnc	w2,w2		;
+	rlnc	w2,w2		;
+	rlnc	w2,w2		;
+	sl	w2,#1,w2	; *w3 = 2 * ((*w3 << 1) | (w2 >> 15)); // base reg
+	rlc	w3,#2,w3	; w2 <<= 1;
+	and	#0x01e,w3	; *w3 &= 0x01e; // w3 now the memory mapped base
+	bclr	0x0042,#0	;
+	btsc	w3,#1		;
+	bset	0x0042,#0	;
+	rrc	w2,#1,w2	; w2 = (w2 >> 1) | (*w3 << 14); // back unchanged
+	
+	mov	[w3],w3		; *w3 = **w3;
+	return			;} // rewrite()
+	
+	
 coo1cpy:	
 	mov	#0xc001,W0	;void coo1cpy(uint16_t** ee0x000) {
 	mov	WREG,EE|0x0000	; do { 
