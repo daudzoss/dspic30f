@@ -32,8 +32,7 @@ EE	equ	0x0000
 	mov	[w15-2],w3	;  uint32_t flash* w3w2 = (sp[-1] << 16) | sp[-2];
 	mov	[w15-4],w2	;
 	mov	#0x0032,w1	;  uint16_t* w1 = &TBLPAG;
-	mov	[w1],[w15++]	;  *sp++ = *w1; // stack TBLPAG7..0 to preserve
-;	and	#0x007f,w3	;
+	mov	[w1],[w15++]	;  *sp++ = *w1; // stack TBLPAG to preserve
 	mov	w3,[w1]		;  *w1 = (w3w2 >> 16) & 0x7f; // user (not config)
 	tblrdh	[w2],w3		;  uint16_t w3 = *w3w2 >> 16;
 	tblrdl	[w2],w2		;  uint16_t w2 = *w3w2 & 0x00ffff;;
@@ -51,19 +50,33 @@ srcadok:
 	bra	dstadok		;
 	
 dstadok:
+	;; perform any required pre-increment or -decrement
+
 	;; now perform the operation in the original opcode
 
-	;; perform any required pre-increment or decrement
+	;; stash the status bits on the stack
 
-	;; perform any required post-increment or decrement
+	;; perform any required post-increment or -decrement
 
-	;; clear the fault bit before returning to prevent a bounceback
-	bclr	0x0080,#3	;  INTCON1 &= ~(1 << ADDRERR);
+	;; advance the stacked PC by one instruction (if not a branch)
+	btsc	?,?		;
+	bra	poptpag		;  if () // PC not already updated
+	subr	#6,w15,w1	;
+	inc2	[w1],[w1]	;
+	bra	nc,poptpag	;
+	subr	#4,w15,w1	;
+	inc	[w1],[w1]	;   *((uint32_t*) &sp[-3]) += 2; // PC += 2
+poptpag:
+
 .if SD_CACHE_WRITEBACK
 .endif
+	mov	#0x0032,w1	;  w1 = &TBLPAG;
+	mov	[--w15],[w1]	;  *--w15 = *w1; // TBLPAG restored
 adrdone:
-	pop.s			; }
-	retfie			;}
+	;; clear the fault bit before returning to prevent a bounceback
+	bclr	0x0080,#3	;  INTCON1 &= ~(1 << ADDRERR);
+	pop.s			; } // stack and status bits restored
+	retfie			;} // adrtrap()
 
 coo1cpy:	
 	mov	#0xc001,W0	;void coo1cpy(uint16_t** ee0x000) {
