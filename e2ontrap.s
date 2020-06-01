@@ -62,13 +62,19 @@ op0x10:
 	btsc	w3,#3		;
 	bra	op0x18		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	SUBR	w3,w1,w1	;    __asm__ ("SUBR W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	SUBR.B	w3,w1,w1	;      __asm__("SUBR.B W3,W1,W1");
+	btss	w2,#14		;    else
+	SUBR	w3,w1,w1	;      __asm__("SUBR W3,W1,W1");
 	bra	op0x1X		;   } else {
 op0x18:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
 	mov.b	[w15-13],w2	;
 	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
-	SUBBR	w3,w1,w1	;    __asm__ ("SUBBR W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	SUBBR.B	w3,w1,w1	;     __asm__("SUBBR.B W3,W1,W1");
+	btss	w2,#14		;    else
+	SUBBR	w3,w1,w1	;     __asm__("SUBBR W3,W1,W1");
 op0x1X:
 	mov.b	0x0042,w3	;   }
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
@@ -83,13 +89,19 @@ op0x40:
 	btsc	w3,#3		;
 	bra	op0x48		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	ADD	w3,w1,w1	;    __asm__ ("ADD W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	ADD.B	w3,w1,w1	;     __asm__("ADD.B W3,W1,W1");
+	btss	w2,#14		;    else
+	ADD	w3,w1,w1	;     __asm__("ADD W3,W1,W1");
 	bra	op0x4X		;   } else {
 op0x48:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
 	mov.b	[w15-13],w2	;
 	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //C
-	ADDC	w3,w1,w1	;    __asm__ ("ADDC W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	ADDC.B	w3,w1,w1	;     __asm__("ADDC.B W3,W1,W1");
+	btss	w2,#14		;    else
+	ADDC	w3,w1,w1	;     __asm__("ADDC W3,W1,W1");
 op0x4X:
 	mov.b	0x0042,w3	;   }
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
@@ -104,13 +116,19 @@ op0x50:
 	btsc	w3,#3		;
 	bra	op0x58		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	SUB	w3,w1,w1	;    __asm__ ("SUB W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	SUB.B	w3,w1,w1	;     __asm__("SUB.B W3,W1,W1");
+	btss	w2,#14		;    else
+	SUB	w3,w1,w1	;     __asm__("SUB W3,W1,W1");
 	bra	op0x5X		;   } else {
 op0x58:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
 	mov.b	[w15-13],w2	;
 	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
-	SUBB	w3,w1,w1	;    __asm__ ("SUBB W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	SUBB.B	w3,w1,w1	;     __asm__("SUBB.B W3,W1,W1");
+	btss	w2,#14		;    else
+	SUBB	w3,w1,w1	;     __asm__("SUBB W3,W1,W1");
 op0x5X:
 	mov.b	0x0042,w3	;   }
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
@@ -125,11 +143,17 @@ op0x60:
 	btsc	w3,#3		;
 	bra	op0x68		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	AND	w3,w1,w1	;    __asm__ ("AND W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	AND.B	w3,w1,w1	;     __asm__("AND.B W3,W1,W1");
+	btss	w2,#14		;    else
+	AND	w3,w1,w1	;     __asm__("AND W3,W1,W1");
 	bra	op0x6X		;   } else {
 op0x68:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	XOR	w3,w1,w1	;    __asm__ ("XOR W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	XOR.B	w3,w1,w1	;     __asm__("XOR.B W3,W1,W1");
+	btss	w2,#14		;    else
+	XOR	w3,w1,w1	;     __asm__("XOR W3,W1,W1");
 op0x6X:
 	mov.b	0x0042,w3	;   }
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
@@ -144,11 +168,17 @@ op0x70:
 	btsc	w3,#3		;
 	bra	op0x78		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	IOR	w3,w1,w1	;    __asm__ ("IOR W3,W1,W1");
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	IOR.B	w3,w1,w1	;     __asm__("IOR.B W3,W1,W1");
+	btss	w2,#14		;    else
+	IOR	w3,w1,w1	;     __asm__("IOR W3,W1,W1");
 	bra	op0x7X		;   } else {
 op0x78:
-	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3); // FIXME: must clear w3 if not an offset indirect access
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	MOV.B	[w1+w3],w1	;     __asm__("MOV.B [W1+W3],W1");
+	btss	w2,#14		;    else
+	MOV	[w1+w3],w1	;     __asm__("MOV [W1+W3],W1");
 op0x7X:
 	mov.b	0x0042,w3	;   }
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
