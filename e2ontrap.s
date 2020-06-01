@@ -56,7 +56,7 @@ EE	equ	0x0000
 	;; march through all opcodes, looking for register-indirect destinations
 op0x10:	
 	lsr	w3,#4,w0	;
-	mov.b	#0x0001,w1	;
+	mov.b	#0x01,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0x40		;  if (w3 & 0x00f0 == SUBR_BR) { //SUBR or SUBBR
 	btsc	w3,#3		;
@@ -72,15 +72,14 @@ op0x18:
 op0x1X:
 	mov.b	0x0042,w3	;   }
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
-	mov	w1,[w0]		;
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 	
 op0x40:	
 	lsr	w3,#4,w0	;
-	mov.b	#0x0002,w1	;
+	mov.b	#0x04,w1	;
 	cpseq.b	w0,w1		;
-	bra	op0x30		;  } else if (w3 & 0x00f0 == ADDADDC) {
+	bra	op0x50		;  } else if (w3 & 0x00f0 == ADDADDC) {
 	btsc	w3,#3		;
 	bra	op0x48		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
@@ -97,7 +96,64 @@ op0x4X:
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 
+op0x50:	
+	lsr	w3,#4,w0	;
+	mov.b	#0x05,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0x60		;  } else if (w3 & 0x00f0 == SUBSUBB) {
+	btsc	w3,#3		;
+	bra	op0x58		;   if (w3 & 0x0008 == 0) {
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	SUB	w3,w1,w1	;    __asm__ ("SUB W3,W1,W1");
+	bra	op0x5X		;   } else {
+op0x58:
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	mov.b	[w15-13],w2	;
+	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
+	SUBB	w3,w1,w1	;    __asm__ ("SUBB W3,W1,W1");
+op0x5X:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(&w0, w1);
+	bra	advanpc		;
 
+op0x60:	
+	lsr	w3,#4,w0	;
+	mov.b	#0x06,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0x70		;  } else if (w3 & 0x00f0 == ANDXOR) {
+	btsc	w3,#3		;
+	bra	op0x68		;   if (w3 & 0x0008 == 0) {
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	AND	w3,w1,w1	;    __asm__ ("AND W3,W1,W1");
+	bra	op0x6X		;   } else {
+op0x68:
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	XOR	w3,w1,w1	;    __asm__ ("XOR W3,W1,W1");
+op0x6X:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(&w0, w1);
+	bra	advanpc		;
+
+op0x70:	
+	lsr	w3,#4,w0	;
+	mov.b	#0x07,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0x80		;  } else if (w3 & 0x00f0 == IORMOV) {
+	btsc	w3,#3		;
+	bra	op0x78		;   if (w3 & 0x0008 == 0) {
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	IOR	w3,w1,w1	;    __asm__ ("IOR W3,W1,W1");
+	bra	op0x7X		;   } else {
+op0x78:
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+
+op0x7X:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(&w0, w1);
+	bra	advanpc		;
 
 
 
@@ -242,14 +298,36 @@ addrmod:
 	;; SP-0x0e=W0 when instruction trap occurred
 	;; SP-0x10=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+.macro	eepromw	code,scratch,adreg
+	mov	#0x4044,\scratch;inline void eepromw(int code, uint16_t adreg) {
+	mov	\scratch,0x0760	; NVMCON = 0x4044; // per DS70138C EXAMPLE 6-3,4
+	mov	0x007f,\scratch	;
+	mov	\adreg,0x0762	; NVMADR = adreg;
+	mov	\scratch,0x0764	; NVMADRU = 0x007f;
+	mov	\scratch,0x0032	; TBLPAG = 0x007f; // need for write (not erase)
+	disi	#5		;
+	mov	#0x0055,\scratch;
+	mov	\scratch,0x0766	; NVMKEY = 0x0055;
+	mov	#0x00aa,\scratch;
+	mov	\scratch,0x0766	; NVMKEY = 0x00aa;
+	bset	0x0760,#15	; NVMCON |= (1 << WR); // initiate erase seq.
+	nop			;
+	nop			;
+	btsc	0x0760,#15	; do {} while (NVMCON & (1 << WR));
+	bra	.-2		;}
+.endm	
+	
 writebk:	
-	fixwadr	w0		;void writebk(uint16_t* w0, uint16_t w1) { //a,d
+	fixwadr	w0		;void writebk(uint16_t* w0, uint16_t w1) {//a,d
 	btsc	w0,#0		; fixwadr(w0);
-	bra	e2write		; if (*w0 & 1 == 0) { // RAM address
-	mov	w1,[w0]		;  **w0 = w1;
-	return			; } else {
+	bra	e2write		; if (w0 & 1 == 0) { // RAM address
+	mov	w1,[w0]		;  *w0 = w1;
+	return			; } else {// valid EEPROM address above 0x007000
 e2write:
-        tblwrl	w1,[w0]		;
+	bclr	w0,#0		;  eepromw(w2 = EEPROM_ERASE_WORD,w0 &= 0xfffe);
+	eepromw	0x4044,w2,w0	;  *w0 = w1; // put the data into the latch
+        tblwtl	w1,[w0]		;  eepromw(w2 = EEPROM_WRITE_WORD, w0);
+	eepromw	0x4004,w2,w0	; }
 	return			;}
 
 	;; stack upon entry:
@@ -274,6 +352,8 @@ rewrite:
 	mov	[w0],w1		;   *w1 = **w0; // store contents in w1 for oper
 	bra	srcdone		;  else // EEPROM address
 seeprom:
+	mov	#0x007f,w1	;
+	mov	w1,0x0032	;   TBLPAG = 0x007f;
 	bclr	w0,#0		;
 	tblrdl	[w0],w1		;   *w1 = *((*w0) & 0xfffe);
 	bra	srcdone		; } else
