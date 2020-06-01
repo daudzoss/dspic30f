@@ -67,12 +67,13 @@ op0x10:
 op0x18:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
 	mov.b	[w15-13],w2	;
-	mov.b	w2,0x0042	;    SR = w15[-13]; // restore borrow for SUBBR
+	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
 	SUBBR	w3,w1,w1	;    __asm__ ("SUBBR W3,W1,W1");
 op0x1X:
 	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   *w2 = (*w2 & 0xff00) | (SR & 0x00ff);
-	rcall	writebk		;   writebk(w0);
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	mov	w1,[w0]		;
+	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 	
 op0x40:	
@@ -88,12 +89,12 @@ op0x40:
 op0x48:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
 	mov.b	[w15-13],w2	;
-	mov.b	w2,0x0042	;    SR = w15[-13]; // restore carry for ADDC
+	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //C
 	ADDC	w3,w1,w1	;    __asm__ ("ADDC W3,W1,W1");
 op0x4X:
 	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   *w2 = (*w2 & 0xff00) | (SR & 0x00ff);
-	rcall	writebk		;   writebk(w0);
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 
 
@@ -139,13 +140,11 @@ op0x:
 	
 	;; advance the stacked PC by one instruction (if not a branch)
 advanpc:
-	btsc	?,?		;
-	bra	poptpag		;  if (FIXME) // PC not already updated
-	subr	#6,w15,w1	;
+	sub	w15,#0x00c,w1	;
 	inc2	[w1],[w1]	;
 	bra	nc,poptpag	;
-	subr	#4,w15,w1	;
-	inc	[w1],[w1]	;   *((uint32_t*) &sp[-3]) += 2; // PC += 2
+	sub	w15,#0x00e,w1	;  *((uint32_t*) &sp[-3]) += 2; // PC += 2
+	inc	[w1],[w1]	;  poptpag: // above skippable with goto poptpag
 poptpag:
 
 .if SD_CACHE_WRITEBACK
@@ -154,9 +153,9 @@ poptpag:
 	mov	[--w15],[w1]	;  *w1 = *--w15; // TBLPAG restored
 	;; clear the fault bit before returning to prevent a bounceback
 adrdone:
-	bclr	0x0080,#3	;  INTCON1 &= ~(1 << ADDRERR);
-	mov.d	[--w15],w2	;  w3 = *--sp, w2 = *--sp;
-	mov.d	[--w15],w0	;  w1 = *--sp, w0 = *--sp; } 
+	bclr	0x0080,#3	; } INTCON1 &= ~(1 << ADDRERR);
+	mov.d	[--w15],w2	; w3 = *--sp, w2 = *--sp;
+	mov.d	[--w15],w0	; w1 = *--sp, w0 = *--sp;
 	retfie			;} // adrtrap()
 
 .macro	fixwadr	w
@@ -196,13 +195,13 @@ adrdone:
 	;; SP-0x08=PC22..16 of return instruction in rewrite()
 	;; SP-0x0a=PC15..0 of return instruction in adrtrap()
 	;; SP-0x0c=PC22..16 of return instruction in adrtrap()
-	;; SP-0x0e=FIXME!
-	;; SP-0x0e=W3 when instruction trap occurred
-	;; SP-0x10=W2 when instruction trap occurred
-	;; SP-0x12=W1 when instruction trap occurred
-	;; SP-0x14=W0 when instruction trap occurred
-	;; SP-0x16=PC15..0 of instruction resulting in trap (?)
-	;; SP-0x18=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+	;; SP-0x0e=TBLPAG when instruction trap occurred
+	;; SP-0x10=W3 when instruction trap occurred
+	;; SP-0x12=W2 when instruction trap occurred
+	;; SP-0x14=W1 when instruction trap occurred
+	;; SP-0x16=W0 when instruction trap occurred
+	;; SP-0x18=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x1a=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 direct:
 
 
@@ -213,13 +212,13 @@ direct:
 	;; SP-0x04=PC22..16 of return instruction in rewrite()
 	;; SP-0x06=PC15..0 of return instruction in adrtrap()
 	;; SP-0x08=PC22..16 of return instruction in adrtrap()
-	;; SP-0x0a=FIXME!
-	;; SP-0x0a=W3 when instruction trap occurred
-	;; SP-0x0c=W2 when instruction trap occurred
-	;; SP-0x0e=W1 when instruction trap occurred
-	;; SP-0x10=W0 when instruction trap occurred
-	;; SP-0x12=PC15..0 of instruction resulting in trap (?)
-	;; SP-0x14=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+	;; SP-0x0a=TBLPAG when instruction trap occurred
+	;; SP-0x0c=W3 when instruction trap occurred
+	;; SP-0x0e=W2 when instruction trap occurred
+	;; SP-0x10=W1 when instruction trap occurred
+	;; SP-0x12=W0 when instruction trap occurred
+	;; SP-0x14=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x16=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 addrmod:
 	lsr	w2,#4,w0	;uint16_t addrmod(uint16_t w2) {
 	and	#0x007,w0	; w0 = w2 >> 4;
@@ -236,13 +235,33 @@ addrmod:
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of return instruction in adrtrap()
 	;; SP-0x04=PC22..16 of return instruction in adrtrap()
-	;; SP-0x06=FIXME!
-	;; SP-0x06=W3 when instruction trap occurred
-	;; SP-0x08=W2 when instruction trap occurred
-	;; SP-0x0a=W1 when instruction trap occurred
-	;; SP-0x0c=W0 when instruction trap occurred
-	;; SP-0x0e=PC15..0 of instruction resulting in trap (?)
-	;; SP-0x10=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+	;; SP-0x06=TBLPAG when instruction trap occurred
+	;; SP-0x08=W3 when instruction trap occurred
+	;; SP-0x0a=W2 when instruction trap occurred
+	;; SP-0x0c=W1 when instruction trap occurred
+	;; SP-0x0e=W0 when instruction trap occurred
+	;; SP-0x10=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+writebk:	
+	fixwadr	w0		;void writebk(uint16_t* w0, uint16_t w1) { //a,d
+	btsc	w0,#0		; fixwadr(w0);
+	bra	e2write		; if (*w0 & 1 == 0) { // RAM address
+	mov	w1,[w0]		;  **w0 = w1;
+	return			; } else {
+e2write:
+        tblwrl	w1,[w0]		;
+	return			;}
+
+	;; stack upon entry:
+	;; SP-0x02=PC15..0 of return instruction in adrtrap()
+	;; SP-0x04=PC22..16 of return instruction in adrtrap()
+	;; SP-0x06=TBLPAG when instruction trap occurred
+	;; SP-0x08=W3 when instruction trap occurred
+	;; SP-0x0a=W2 when instruction trap occurred
+	;; SP-0x0c=W1 when instruction trap occurred
+	;; SP-0x0e=W0 when instruction trap occurred
+	;; SP-0x10=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 rewrite:	
 	mov	0x0060,w1	;void rewrite(uint16_t* w0/*d*/,uint16_t* w1,//s
 	and	w1,w2,w0	;             uint16_t w2, uint16_t* w3) {//base
@@ -269,7 +288,6 @@ srcdone:
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
 	rcall	addrmod		; *w0 = addrmod(w2 >> 7);
-;	fixwadr	w0		; //fixwadr(w0);;;do this upon return instead?!?
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
@@ -288,8 +306,8 @@ srcdone:
 	bra	w4w15br		;
 	btsc	w3,#3		;
 	bra	w4w15br		; if (*w3 & 0x018 == 0) // w0/w1/w2/w3 off stack
-	sub	w3,#0x0c,w3	;
-	mov	[w15+w3],w3	;  *w3 = sp[*w3 - 6]; // since w0 at sp-0x0c etc.
+	sub	w3,#0x0e,w3	;
+	mov	[w15+w3],w3	;  *w3 = sp[*w3 - 7]; // since w0 at SP-0x0c etc
 	bra	rbaseok		; else
 w4w15br:	
 	mov	[w3],w3		;  *w3 = **w3; // won't touch r3 again
