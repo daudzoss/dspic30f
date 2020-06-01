@@ -11,12 +11,16 @@
 	goto	main
 
 	org	0x000008
-	dw	adrtrap
+	.pword	adrtrap
 
 	org	0x000088
-	dw	0x7ffc00
+	.pword	0x7ffc00
 	
 	org	0x000100
+	
+	;; stack upon entry:
+	;; SP-0x02=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x04=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 adrtrap:	
 .if B0REQUIRED1
 EE	equ	0x0001
@@ -26,7 +30,7 @@ EE	equ	0x0000
 	mov.d	w0,[w15++]	;void adrtrap(uint16_t* sp) {
 	mov.d	w2,[w15++]	; *sp++ = w0, *sp++ = w1;
 	btss	0x0080,#3	; *sp++ = w2, *sp++ = w3;
-	bra	adrdone		; if (INTCON1 & (1 << ADDRERR)) { // is bus trap
+	bra	adrdone		; if (INTCON1 & (1 << ADDRERR)) { // is adr trap
 
 	;; as there's no SFR reflecting the EA causing the fault,
 	;; will need to completely decode the instruction here :-(
@@ -49,7 +53,6 @@ op0x1X:
 op0x2X:	
 
 
-op0x01b:	
 op0x:	
 	mov	#,w0		;
 	cpseq	w3,w0		;
@@ -91,25 +94,6 @@ op0x:
 	cpseq	w3,w0		;
 	bra	op0x		;
 	
-	;; w0 holds src word address, w1 holds dest word address
-adrw0w1:
-	btsc	w0,#0		;
-	bra	srcadok		;
-
-
-srcadok:
-	btsc	w1,#0		;
-	bra	dstadok		;
-	
-dstadok:
-	;; perform any required pre-increment or -decrement
-
-	;; now perform the operation in the original opcode
-
-	;; stash the status bits on the stack
-
-	;; perform any required post-increment or -decrement
-
 	;; advance the stacked PC by one instruction (if not a branch)
 	btsc	?,?		;
 	bra	poptpag		;  if () // PC not already updated
@@ -131,6 +115,35 @@ adrdone:
 	mov.d	[--w15],w0	;  w1 = *--sp, w0 = *--sp; } 
 	retfie			;} // adrtrap()
 
+	;; stack upon entry:
+	;; SP-0x02=PC15..0 of return instruction in addrmod()
+	;; SP-0x04=PC22..16 of return instruction in addrmod()
+	;; SP-0x06=PC15..0 of return instruction in rewrite()
+	;; SP-0x08=PC22..16 of return instruction in rewrite()
+	;; SP-0x0a=PC15..0 of return instruction in adrtrap()
+	;; SP-0x0c=PC22..16 of return instruction in adrtrap()
+	;; SP-0x0e=W3 when instruction trap occurred
+	;; SP-0x10=W2 when instruction trap occurred
+	;; SP-0x12=W1 when instruction trap occurred
+	;; SP-0x14=W0 when instruction trap occurred
+	;; SP-0x16=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x18=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+direct:
+
+
+
+
+	;; stack upon entry:
+	;; SP-0x02=PC15..0 of return instruction in rewrite()
+	;; SP-0x04=PC22..16 of return instruction in rewrite()
+	;; SP-0x06=PC15..0 of return instruction in adrtrap()
+	;; SP-0x08=PC22..16 of return instruction in adrtrap()
+	;; SP-0x0a=W3 when instruction trap occurred
+	;; SP-0x0c=W2 when instruction trap occurred
+	;; SP-0x0e=W1 when instruction trap occurred
+	;; SP-0x10=W0 when instruction trap occurred
+	;; SP-0x12=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x14=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 addrmod:
 	lsr	w2,#4,w0	;uint16_t addrmod(uint16_t w2) {
 	and	#0x007,w0	; w0 = w2 >> 4;
@@ -141,9 +154,18 @@ addrmod:
 	goto	postinc		;  case 3: return postinc(w2);
 	goto	predec		;  case 4: return predec(w2);
 	goto	preinc		;  case 5: return preinc(w2);
-	nop			; }        return 0;
+	retlw	#0,w0		; }        return 0;
 	retlw	#0,w0		;} // addrmod()
 
+	;; stack upon entry:
+	;; SP-0x02=PC15..0 of return instruction in adrtrap()
+	;; SP-0x04=PC22..16 of return instruction in adrtrap()
+	;; SP-0x06=W3 when instruction trap occurred
+	;; SP-0x08=W2 when instruction trap occurred
+	;; SP-0x0a=W1 when instruction trap occurred
+	;; SP-0x0c=W0 when instruction trap occurred
+	;; SP-0x0e=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x10=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 rewrite:	
 	mov	0x0060,w1	;void rewrite(uint16_t* w0/*d*/,uint16_t* w1,//s
 	and	w1,w2,w0	;             uint16_t w2, uint16_t* w3) {//base
@@ -154,8 +176,7 @@ rewrite:
 sconst:	
 	and	w2,#0x1f,w0	;  *w1 = w2 & 0x1f; // constant encoded in instr
 srcdone:
-	mov	w0,w1		; // now handle the base register (FIXME: w4-w14 only!)
-
+	mov	w0,w1		;
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
@@ -163,22 +184,58 @@ srcdone:
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
-	rcall	addrmod		; *w0 = addrmod(w2 << 7);
+	rcall	addrmod		; *w0 = addrmod(w2 >> 7);
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
-	rlnc	w2,w2		;
-	sl	w2,#1,w2	; *w3 = 2 * ((*w3 << 1) | (w2 >> 15)); // base reg
+	rlnc	w2,w2		; // now handle a (never indirect) base register
+	sl	w2,#1,w2	; *w3 = 2 * ((*w3 << 1) | (w2 >> 15)); // reg#
 	rlc	w3,#2,w3	; w2 <<= 1;
 	and	#0x01e,w3	; *w3 &= 0x01e; // w3 now the memory mapped base
 	bclr	0x0042,#0	;
 	btsc	w3,#1		;
 	bset	0x0042,#0	;
-	rrc	w2,#1,w2	; w2 = (w2 >> 1) | (*w3 << 14); // back unchanged
+	rrc	w2,#1,w2	; w2 = (w2 >> 1) | (*w3 << 14); // w2 unchanged
+	btsc	w3,#4		;
+	bra	w4w15br		;
+	btsc	w3,#3		;
+	bra	w4w15br		; if (w3 & 0x018) // take w0/w1/w2/w3 off stack
+	sub	w3,#0x0c,w3	;
+	mov	[w15+w3],w3	;  w3 = sp[w3 - 6]; // since w0 at sp-0x0c etc.
+	bra	rbaseok		; else
+w4w15br:	
+	mov	[w3],w3		;  w3 = *w3; // won't touch r3 again
+rbaseok:
+
+	;; w0 holds src word address, w1 holds dest word address
+adrw0w1:
+	btsc	w0,#0		;
+	bra	srcadok		;
+
+
+srcadok:
+	btsc	w1,#0		;
+	bra	dstadok		;
 	
+dstadok:
+	;; perform any required pre-increment or -decrement
+
+	;; now perform the operation in the original opcode
+
+	;; stash the status bits on the stack
+
+	;; perform any required post-increment or -decrement
+
+
+
+
+
+
+
+
 	mov	[w3],w3		; *w3 = **w3;
 	return			;} // rewrite()
 	
