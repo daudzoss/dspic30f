@@ -174,7 +174,7 @@ op0x70:
 	IOR	w3,w1,w1	;     __asm__("IOR W3,W1,W1");
 	bra	op0x7X		;   } else {
 op0x78:
-	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3); // FIXME: must clear w3 if not an offset indirect access
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3); // FIXME: rewrite() must clear w3 if not an offset indirect access
 	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
 	MOV.B	[w1+w3],w1	;     __asm__("MOV.B [W1+W3],W1");
 	btss	w2,#14		;    else
@@ -274,24 +274,22 @@ adrdone:
 	bset	\w,#0		;  } } // fixwadr()
 2:
 .endm
-	;; stack upon entry:
-	;; SP-0x02=PC15..0 of return instruction in addrmod()
-	;; SP-0x04=PC22..16 of return instruction in addrmod()
-	;; SP-0x06=PC15..0 of return instruction in rewrite()
-	;; SP-0x08=PC22..16 of return instruction in rewrite()
-	;; SP-0x0a=PC15..0 of return instruction in adrtrap()
-	;; SP-0x0c=PC22..16 of return instruction in adrtrap()
-	;; SP-0x0e=TBLPAG when instruction trap occurred
-	;; SP-0x10=W3 when instruction trap occurred
-	;; SP-0x12=W2 when instruction trap occurred
-	;; SP-0x14=W1 when instruction trap occurred
-	;; SP-0x16=W0 when instruction trap occurred
-	;; SP-0x18=PC15..0 of instruction resulting in trap (?)
-	;; SP-0x1a=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+
 direct:
-
-
-
+	sl	w2,#1,w0	;uint16_t direct(uint16_t w2, uint1_t B) {
+	and	#0x01e,w0	; return (w2 << 1) & 0x001e; // memory-mapped Wx
+	return			;} // direct()
+indir:
+	mov	w2,w0		;uint16_t indir(uint16_t w2, B) { return w2;
+	return			;} // indir()
+postdec:
+	rcall	direct		;
+	
+	lsr	w0,w2		;
+	bra	indir		;
+postinc:
+predec:	
+preinc:
 
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of return instruction in rewrite()
@@ -306,17 +304,17 @@ direct:
 	;; SP-0x14=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x16=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 addrmod:
-	lsr	w2,#4,w0	;uint16_t addrmod(uint16_t w2) {
+	rrnc	w2,#4,w0	;uint16_t addrmod(uint16_t w2, uint1_t B) {
 	and	#0x007,w0	; w0 = w2 >> 4;
 	bra	w0		; switch (w0 & 0x0070) { // src indirect addr
-	goto	direct		;  case 0: return direct(w2);
-	goto	indir		;  case 1: return indir(w2);
-	goto	postdec		;  case 2: return postdec(w2);
-	goto	postinc		;  case 3: return postinc(w2);
-	goto	predec		;  case 4: return predec(w2);
-	goto	preinc		;  case 5: return preinc(w2);
-	goto	regoffs		; }        return regoffs(w2); // only for "mov"
-	goto	regoffs		;} // addrmod()
+	bra	direct		;  case 0: return direct(w2, B);
+	bra	indir		;  case 1: return indir(w2, B);
+	bra	postdec		;  case 2: return postdec(w2, B);
+	bra	postinc		;  case 3: return postinc(w2, B);
+	bra	predec		;  case 4: return predec(w2, B);
+	bra	preinc		;  case 5: return preinc(w2, B);
+	bra	indir		; }        return indir(w2, B); // reg+off "mov"
+	bra	indir		;} // addrmod()
 
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of return instruction in adrtrap()
@@ -375,7 +373,8 @@ rewrite:
 	and	w1,w2,w0	;             uint16_t w2, uint16_t* w3) {//base
 	cpseq	w0,w1		;
 	bra	sconst		; if (w2 & 0x0060 != 0x0060) { // src not const.
-	rcall	addrmod		;  *w0 = addrmod(w2); // w0 hold address of src
+	btst.c	w2,#14		;  // based on B and mode/reg bits, w0 gets src
+	rcall	addrmod		;  *w0 = addrmod(w2, w2 & 0x4000 ? 1 : 0);
 	fixwadr	w0		;  fixwadr(w0); // address "fixed" if in EEPROM
 	btsc	w0,#0		;
 	bra	seeprom		;  if ((*w0) & 1 == 0) // RAM address
@@ -397,7 +396,8 @@ srcdone:
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
-	rcall	addrmod		; *w0 = addrmod(w2 >> 7);
+	btst.c	w2,#7		;
+	rcall	addrmod		; *w0 = addrmod(w2 >> 7, w2 & 0x4000 ? 1 : 0);
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
@@ -447,7 +447,7 @@ autocpy:
 	bset	0xINTCON2,#15	; INTCON2 |= (1 << ALTIVT);
 	rcall	coo1cpy		; coo1cpy(&ee_base);
 alldone:
-	goto	alldone		;} // main()
+	bra	alldone		;} // main()
 
 	;; now perform the operation in the original opcode
 
