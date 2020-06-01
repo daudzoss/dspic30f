@@ -1,3 +1,4 @@
+;;; e2ontrap.s
 ;;; intercept misaligned memory accesseses to map the EEPROM into main memory
 ;;; space, using the AddressError Trap Vector to run routines that manipulate
 ;;; it behind the scenes
@@ -44,6 +45,7 @@ EE	equ	0x0000
 	;; as there's no SFR reflecting the EA causing the fault,
 	;; will need to completely decode the instruction here :-(
 	mov	[w15-10],w3	;  uint32_t* w3w2 = (sp[-5] << 16) | sp[-6];
+;	and	#0x07f,w3	;  w3w2 &= 0x7fffff;
 	mov	[w15-12],w2	;
 	mov	#0x0032,w1	;  uint16_t* w1 = &TBLPAG;
 	mov	[w1],[w15++]	;  *sp++ = *w1; // stack TBLPAG to preserve
@@ -54,31 +56,46 @@ EE	equ	0x0000
 	;; march through all opcodes, looking for register-indirect destinations
 op0x10:	
 	lsr	w3,#4,w0	;
-	mov	#0x0001,w1	;
-	cpseq	w0,w1		;
-	bra	op0x20		;  if (w3 & 0x00f0 == SUBR_BR) { //SUBR or SUBBR
+	mov.b	#0x0001,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0x40		;  if (w3 & 0x00f0 == SUBR_BR) { //SUBR or SUBBR
 	btsc	w3,#3		;
-	bra	op0x18		;   if (w3 & 0x0008 == 0) { //SUBR
+	bra	op0x18		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	sub	w15,#14,w2	;    w2 = &sp[-7];
 	SUBR	w3,w1,w1	;    __asm__ ("SUBR W3,W1,W1");
 	bra	op0x1X		;   } else {
 op0x18:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	sub	w15,#13,w2	;    w2 = &sp[-7];
+	mov.b	[w15-13],w2	;
+	mov.b	w2,0x0042	;    SR = w15[-13]; // restore borrow for SUBBR
 	SUBBR	w3,w1,w1	;    __asm__ ("SUBBR W3,W1,W1");
 op0x1X:
 	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w2]		;   *w2 = (*w2 & 0xff00) | (SR & 0x00ff);
+	mov.b	w3,[w15-13]	;   *w2 = (*w2 & 0xff00) | (SR & 0x00ff);
 	rcall	writebk		;   writebk(w0);
 	bra	advanpc		;
 	
-op0x20:	
+op0x40:	
 	lsr	w3,#4,w0	;
-	mov	#0x0002,w1	;
-	cpseq	w0,w1		;
-	bra	op0x30		;  } else if (w3 & 0x00f0 == MOV) {
-	
+	mov.b	#0x0002,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0x30		;  } else if (w3 & 0x00f0 == ADDADDC) {
+	btsc	w3,#3		;
+	bra	op0x48		;   if (w3 & 0x0008 == 0) {
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	ADD	w3,w1,w1	;    __asm__ ("ADD W3,W1,W1");
+	bra	op0x4X		;   } else {
+op0x48:
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	mov.b	[w15-13],w2	;
+	mov.b	w2,0x0042	;    SR = w15[-13]; // restore carry for ADDC
+	ADDC	w3,w1,w1	;    __asm__ ("ADDC W3,W1,W1");
+op0x4X:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w15-13]	;   *w2 = (*w2 & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(w0);
+	bra	advanpc		;
+
 
 
 
