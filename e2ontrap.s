@@ -21,6 +21,15 @@
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x04=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+	;; 
+	;; soon thereafter:
+	;; SP-0x02=W3 when instruction trap occurred
+	;; SP-0x04=W2 when instruction trap occurred
+	;; SP-0x06=W1 when instruction trap occurred
+	;; SP-0x08=W0 when instruction trap occurred
+	;; SP-0x0a=0\TBLPAG7..0 when instruction trap occurred
+	;; SP-0x0c=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x0e=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 adrtrap:	
 .if B0REQUIRED1
 EE	equ	0x0001
@@ -43,20 +52,37 @@ EE	equ	0x0000
 	tblrdl	[w2],w2		;  uint16_t w2 = *w3w2 & 0x00ffff;; // arg in w2
 	
 	;; march through all opcodes, looking for register-indirect destinations
-op0x1X:	
+op0x10:	
 	lsr	w3,#4,w0	;
 	mov	#0x0001,w1	;
 	cpseq	w0,w1		;
-	bra	op0x2X		;  if (w3 & 0xfff0 == SUBR_BR) { //SUBR or SUBBR
-	rcall	rewrite		;   rewrite(&w0, &w1, w2, &w3);
+	bra	op0x20		;  if (w3 & 0x00f0 == SUBR_BR) { //SUBR or SUBBR
+	btsc	w3,#3		;
+	bra	op0x18		;   if (w3 & 0x0008 == 0) { //SUBR
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	sub	w15,#14,w2	;    w2 = &sp[-7];
+	SUBR	w3,w1,w1	;    __asm__ ("SUBR W3,W1,W1");
+	bra	op0x1X		;   } else {
+op0x18:
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	sub	w15,#13,w2	;    w2 = &sp[-7];
+	SUBBR	w3,w1,w1	;    __asm__ ("SUBBR W3,W1,W1");
+op0x1X:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w2]		;   *w2 = (*w2 & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(w0);
+	bra	advanpc		;
+	
+op0x20:	
+	lsr	w3,#4,w0	;
+	mov	#0x0002,w1	;
+	cpseq	w0,w1		;
+	bra	op0x30		;  } else if (w3 & 0x00f0 == MOV) {
+	
 
-op0x2X:	
 
 
-op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
-	bra	op0x		;
+
 op0x:	
 	mov	#,w0		;
 	cpseq	w3,w0		;
@@ -95,8 +121,9 @@ op0x:
 	bra	op0x		;
 	
 	;; advance the stacked PC by one instruction (if not a branch)
+advanpc:
 	btsc	?,?		;
-	bra	poptpag		;  if () // PC not already updated
+	bra	poptpag		;  if (FIXME) // PC not already updated
 	subr	#6,w15,w1	;
 	inc2	[w1],[w1]	;
 	bra	nc,poptpag	;
@@ -108,13 +135,43 @@ poptpag:
 .endif
 	mov	#0x0032,w1	;  w1 = &TBLPAG;
 	mov	[--w15],[w1]	;  *w1 = *--w15; // TBLPAG restored
-adrdone:
 	;; clear the fault bit before returning to prevent a bounceback
+adrdone:
 	bclr	0x0080,#3	;  INTCON1 &= ~(1 << ADDRERR);
 	mov.d	[--w15],w2	;  w3 = *--sp, w2 = *--sp;
 	mov.d	[--w15],w0	;  w1 = *--sp, w0 = *--sp; } 
 	retfie			;} // adrtrap()
 
+.macro	fixwadr	w
+	btsc	\w,#0		;inline void fixwadr(uint16_t* *w) {
+	bra	1f		;// access EEPROM mapped into a RAM word
+	btss	\w,#14		;// if in EEPROM, will return LSB set, to
+	bra	2f		;// indicate that TBLWR/TBLRD must be used
+	btss	\w,#13		;
+	bra	2f		; if (((*w) & 0x0001) ||
+	btss	\w,#12		;     (((*w) & 0x7000 == 0x7000) &&
+	bra	2f		;      (EEPROM_SIZE >= 0x1000)) ||
+.if EEPROM_SIZE < 4096
+	btsc	\w,#11		;     (((*w) & 0x7800 == 0x7800) &&
+	bra	2f		;      (EEPROM_SIZE >= 0x0800)) ||
+.endif
+.if EEPROM_SIZE < 2048
+	btsc	\w,#10		;     (((*w) & 0x7c00 == 0x7c00) &&
+	bra	2f		;      (EEPROM_SIZE >= 0x0400))) {
+.endif
+1:
+	sl	\w,#12,\w	;
+	bset	0x0042,#0	;
+	asr	\w,#12,\w	;  (*w) |= 0xf001; // fool it, get it? ;-)
+.if EEPROM_SIZE < 4096
+	bset	\w,#11		;  if (EEPROM_SIZE < 0x1000) (*w) |= 0x0800;
+.endif
+.if EEPROM_SIZE < 2048
+	bset	\w,#10		;  if (EEPROM_SIZE < 0x0800) (*w) |= 0x0400;
+.endif
+	bset	\w,#0		;  } } // fixwadr()
+2:
+.endm
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of return instruction in addrmod()
 	;; SP-0x04=PC22..16 of return instruction in addrmod()
@@ -122,6 +179,7 @@ adrdone:
 	;; SP-0x08=PC22..16 of return instruction in rewrite()
 	;; SP-0x0a=PC15..0 of return instruction in adrtrap()
 	;; SP-0x0c=PC22..16 of return instruction in adrtrap()
+	;; SP-0x0e=FIXME!
 	;; SP-0x0e=W3 when instruction trap occurred
 	;; SP-0x10=W2 when instruction trap occurred
 	;; SP-0x12=W1 when instruction trap occurred
@@ -138,6 +196,7 @@ direct:
 	;; SP-0x04=PC22..16 of return instruction in rewrite()
 	;; SP-0x06=PC15..0 of return instruction in adrtrap()
 	;; SP-0x08=PC22..16 of return instruction in adrtrap()
+	;; SP-0x0a=FIXME!
 	;; SP-0x0a=W3 when instruction trap occurred
 	;; SP-0x0c=W2 when instruction trap occurred
 	;; SP-0x0e=W1 when instruction trap occurred
@@ -154,12 +213,13 @@ addrmod:
 	goto	postinc		;  case 3: return postinc(w2);
 	goto	predec		;  case 4: return predec(w2);
 	goto	preinc		;  case 5: return preinc(w2);
-	retlw	#0,w0		; }        return 0;
-	retlw	#0,w0		;} // addrmod()
+	goto	regoffs		; }        return regoffs(w2); // only for "mov"
+	goto	regoffs		;} // addrmod()
 
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of return instruction in adrtrap()
 	;; SP-0x04=PC22..16 of return instruction in adrtrap()
+	;; SP-0x06=FIXME!
 	;; SP-0x06=W3 when instruction trap occurred
 	;; SP-0x08=W2 when instruction trap occurred
 	;; SP-0x0a=W1 when instruction trap occurred
@@ -170,13 +230,20 @@ rewrite:
 	mov	0x0060,w1	;void rewrite(uint16_t* w0/*d*/,uint16_t* w1,//s
 	and	w1,w2,w0	;             uint16_t w2, uint16_t* w3) {//base
 	cpseq	w0,w1		;
-	bra	sconst		; if (w2 & 0x0060 != 0x0060) // src not const.
-	rcall	addrmod		;  *w1 = addrmod(w2);
-	bra	srcdone		; else
+	bra	sconst		; if (w2 & 0x0060 != 0x0060) { // src not const.
+	rcall	addrmod		;  *w0 = addrmod(w2); // w0 hold address of src
+	fixwadr	w0		;  fixwadr(w0); // address "fixed" if in EEPROM
+	btsc	w0,#0		;
+	bra	seeprom		;  if ((*w0) & 1 == 0) // RAM address
+	mov	[w0],w1		;   *w1 = **w0; // store contents in w1 for oper
+	bra	srcdone		;  else // EEPROM address
+seeprom:
+	bclr	w0,#0		;
+	tblrdl	[w0],w1		;   *w1 = *((*w0) & 0xfffe);
+	bra	srcdone		; } else
 sconst:	
-	and	w2,#0x1f,w0	;  *w1 = w2 & 0x1f; // constant encoded in instr
+	and	w2,#0x1f,w1	;  *w1 = w2 & 0x1f; // constant encoded in instr
 srcdone:
-	mov	w0,w1		;
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
@@ -185,13 +252,14 @@ srcdone:
 	rrnc	w2,w2		;
 	rrnc	w2,w2		;
 	rcall	addrmod		; *w0 = addrmod(w2 >> 7);
-	rlnc	w2,w2		;
+;	fixwadr	w0		; //fixwadr(w0);;;do this upon return instead?!?
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		;
 	rlnc	w2,w2		; // now handle a (never indirect) base register
+	rlnc	w2,w2		; // specified (awkwardly) in opcode bits 16..13
 	sl	w2,#1,w2	; *w3 = 2 * ((*w3 << 1) | (w2 >> 15)); // reg#
 	rlc	w3,#2,w3	; w2 <<= 1;
 	and	#0x01e,w3	; *w3 &= 0x01e; // w3 now the memory mapped base
@@ -202,41 +270,13 @@ srcdone:
 	btsc	w3,#4		;
 	bra	w4w15br		;
 	btsc	w3,#3		;
-	bra	w4w15br		; if (w3 & 0x018) // take w0/w1/w2/w3 off stack
+	bra	w4w15br		; if (*w3 & 0x018 == 0) // w0/w1/w2/w3 off stack
 	sub	w3,#0x0c,w3	;
-	mov	[w15+w3],w3	;  w3 = sp[w3 - 6]; // since w0 at sp-0x0c etc.
+	mov	[w15+w3],w3	;  *w3 = sp[*w3 - 6]; // since w0 at sp-0x0c etc.
 	bra	rbaseok		; else
 w4w15br:	
-	mov	[w3],w3		;  w3 = *w3; // won't touch r3 again
+	mov	[w3],w3		;  *w3 = **w3; // won't touch r3 again
 rbaseok:
-
-	;; w0 holds src word address, w1 holds dest word address
-adrw0w1:
-	btsc	w0,#0		;
-	bra	srcadok		;
-
-
-srcadok:
-	btsc	w1,#0		;
-	bra	dstadok		;
-	
-dstadok:
-	;; perform any required pre-increment or -decrement
-
-	;; now perform the operation in the original opcode
-
-	;; stash the status bits on the stack
-
-	;; perform any required post-increment or -decrement
-
-
-
-
-
-
-
-
-	mov	[w3],w3		; *w3 = **w3;
 	return			;} // rewrite()
 	
 	
@@ -247,7 +287,7 @@ coo1cpy:
 	mov	[W1],W2		;
 	cpseq	W2,W0		;  **ee0x000 = 0xc001;
 	bra	coo1cpy		; } while (**ee0x000 != 0xc001);
-	return			;}
+	return			;} // coolcpy()
 	
 main:
 	rcall	coo1cpy		;void main(void) {
@@ -262,5 +302,8 @@ autocpy:
 	bset	0xINTCON2,#15	; INTCON2 |= (1 << ALTIVT);
 	rcall	coo1cpy		; coo1cpy(&ee_base);
 alldone:
-	goto	alldone		;}
+	goto	alldone		;} // main()
 
+	;; now perform the operation in the original opcode
+
+	;; stash the status bits on the stack
