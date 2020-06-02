@@ -289,28 +289,56 @@ adrdone:
 	;; SP-0x16=W0 when instruction trap occurred
 	;; SP-0x18=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x1a=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+.macro	relolow	\addr,\fullchk
+.if \fullchk
+	btsc	\addr,#15	;inline uint16_t relolow(uint16_t* addr,
+	bra	1f		;                        uint1_t fullchk) {
+	btsc	\addr,#14	;
+	bra	1f		;
+	btsc	\addr,#13	;
+	bra	1f		;
+	btsc	\addr,#12	;
+	bra	1f		;
+	btsc	\addr,#13	;
+	bra	1f		;
+	btsc	\addr,#12	;
+	bra	1f		;
+	btsc	\addr,#11	;
+	bra	1f		;
+	btsc	\addr,#10	;
+	bra	1f		;
+	btsc	\addr,#9	;
+	bra	1f		;
+	btsc	\addr,#8	;
+	bra	1f		;
+	btsc	\addr,#7	;
+	bra	1f		;
+	btsc	\addr,#6	;
+	bra	1f		;
+	btsc	\addr,#5	;
+	bra	1f		;
+.endif	
+	btsc	\addr,#4	; // check addr really one of the stacked w0..w4
+	bra	1f		; if ((fullchk & (addr/2 < 4)) ||
+	btsc	\addr,#3	;     ((addr & 0x001e)/2 < 4))
+	bra	1f		;  addr = &sp[w0/2 - 11];
+	add	w15,\addr,w0	; return addr;
+	sub	w0,#0x16	;} // relolow()
+1:	
+.endm
 .macro	addrnum \rnum
 	sl	\rnum,#1,w0	;inline uint16_t addrnum(uint4_t rnum) {
-	and	#0x01e,w0	; uint16_t* w0 = (w2 << 1) & 0x001e; //
-	btsc	w0,#4		;
-	bra	1f		;
-	btsc	w0,#3		; if (w0/2 < 4) // one of the stacked w0..w4
-	bra	1f		;  w0 = &sp[w0/2 - 11];
-	add	w15,w0,w0	; return w0;
-	sub	w0,#0x16	;} // addrnum()
-1:	
+	and	#0x01e,w0	; return relolow((rnum << 1) & 0x001e);
+	relolow	w0,0		;} // addrnum()
 .endm
 direct:
 	addrnum	w2		;uint16_t direct(uint16_t w2){return addrnum(w2)
 	return			;} // direct()
 indir:
 	addrnum	w2		;uint16_t indir(uint16_t w2) {
-	mov	[w0],w0		; return *addrnum(w2);
+	mov	[w0],w0		;
+	relolow	w0,1		; return relolow(*addrnum(w2));
 	return			;} // indir()
-;;; FIXME:postdec() and postinc() updating their register now may be defeated by
-;;; instructions using RAM locations 0x0000 to 0x001f (instead of the register)
-;;; This can be corrected by checking the final address returned and if < 8,
-;;; tweaking it akin to addrnum()
 postdec:
 	addrnum	w2		;uint16_t postdec(uint16_t w2, uint1_t B) {
 	mov	[w0],[w15++]	; uint16_t temp =*((uint16_t*)w0 = addrnum(w2));
@@ -318,7 +346,8 @@ postdec:
 	dec	[w0]		;  *(w0 = (uint8_t*) w0)++;
 	btss	#0x0042,#0	; else
 	dec2	[w0]		;  *(w0 = (uint16_t*) w0)++;
-	mov	[--w15],w0	; return temp;
+	mov	[--w15],w0	;
+	relolow	w0,1		; return relolow(temp);
 	return			;} // postdec()
 postinc:
 	addrnum	w2		;uint16_t postinc(uint16_t w2, uint1_t B) {
@@ -327,7 +356,8 @@ postinc:
 	inc	[w0]		;  *(w0 = (uint8_t*) w0)++;
 	btss	#0x0042,#0	; else
 	inc2	[w0]		;  *(w0 = (uint16_t*) w0)++;
-	mov	[--w15],w0	; return temp;
+	mov	[--w15],w0	;
+	relolow	w0,1		; return relolow(temp);
 	return			;} // postinc()
 predec:
 	addrnum	w2		;uint16_t predec(uint16_t w2, uint1_t B) {
@@ -335,7 +365,8 @@ predec:
 	dec	[w0],[w0]	;  --*((uint8_t*) w0);
 	btss	#0x0042,#0	; else
 	dec2	[w0],[w0]	;  --*((uint16_t*) w0);
-	mov	[w0],w0		; return *w0;
+	mov	[w0],w0		;
+	relolow	w0,1		; return relolow(*w0);
 	return			;} // predec()
 preinc:
 	addrnum	w2		;uint16_t preinc(uint16_t w2, uint1_t B) {
@@ -343,7 +374,8 @@ preinc:
 	inc	[w0],[w0]	;  ++*((uint8_t*) w0);
 	btss	#0x0042,#0	; else
 	inc2	[w0],[w0]	;  ++*((uint16_t*) w0);
-	mov	[w0],w0		; return *w0;
+	mov	[w0],w0		;
+	relolow	w0,1		; return relolow(*w0);
 	return			;} // preinc()
 
 	;; stack upon entry:
