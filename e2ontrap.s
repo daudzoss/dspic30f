@@ -164,7 +164,7 @@ op0x70:
 	lsr	w3,#4,w0	;
 	mov.b	#0x07,w1	;
 	cpseq.b	w0,w1		;
-	bra	op0x80		;  } else if (w3 & 0x00f0 == IORMOV) {
+	bra	op0x90		;  } else if (w3 & 0x00f0 == IORMOV) {
 	btsc	w3,#3		;
 	bra	op0x78		;   if (w3 & 0x0008 == 0) {
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
@@ -174,7 +174,8 @@ op0x70:
 	IOR	w3,w1,w1	;     __asm__("IOR W3,W1,W1");
 	bra	op0x7X		;   } else {
 op0x78:
-	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3); // FIXME: rewrite() must clear w3 if not an offset indirect access
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+;;;  // FIXME: rewrite() must finish with w3 clear if not offset indirect access
 	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
 	MOV.B	[w1+w3],w1	;     __asm__("MOV.B [W1+W3],W1");
 	btss	w2,#14		;    else
@@ -185,43 +186,49 @@ op0x7X:
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 
-
-
+op0x90:	lsr	w3,#4,w0	;
+	mov.b	#0x09,w1	;
+	cpseq	w0,w1		;
+	bra	op0x		;  } else if (w3 & 0x00f0 == MOVSLIT) {
+	btsc	w3,#3		;
+	bra	op0x98		;   if (w3 & 0x0008 == 0) { // indirect+lit to W
+	rcall	rewrmov		;    rewrmov(&w0, &w1, w2, &w3); // no pre/posts
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
+	MOV.B	[w1+w3],w1	;     __asm__("MOV.B [W1+W3],W1");
+	btss	w2,#14		;    else
+	MOV	[w1+w3],w1	;     __asm__("MOV [W1+W3],W1");
+	bra	op0x9X		;   } else { // W to indirect+lit
+op0x98:
+	rcall	rewrmov		;    rewrmov(&w0, &w1, w2, &w3); // no pre/posts
+	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte acces
+	MOV.B
+	btss	w2,#14		;    else
+	MOV
+op0x9X:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(&w0, w1);
+	bra	advanpc		;
+	
 op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
+	lsr	w3,#4,w0	;
+	mov	#0x,w1		;
+	cpseq	w0,w1		;
 	bra	op0x		;
 op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
+	lsr	w3,#4,w0	;
+	mov	#0x,w1		;
+	cpseq	w0,w1		;
 	bra	op0x		;
 op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
+	lsr	w3,#4,w0	;
+	mov	#0x,w1		;
+	cpseq	w0,w1		;
 	bra	op0x		;
 op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
-	bra	op0x		;
-op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
-	bra	op0x		;
-op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
-	bra	op0x		;
-op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
-	bra	op0x		;
-op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
-	bra	op0x		;
-op0x:	
-	mov	#,w0		;
-	cpseq	w3,w0		;
+	lsr	w3,#4,w0	;
+	mov	#0x,w1		;
+	cpseq	w0,w1		;
 	bra	op0x		;
 	
 	;; advance the stacked PC by one instruction (if not a branch)
