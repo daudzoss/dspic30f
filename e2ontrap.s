@@ -189,23 +189,13 @@ op0x7X:
 op0x90:	lsr	w3,#4,w0	;
 	mov.b	#0x09,w1	;
 	cpseq	w0,w1		;
-	bra	op0x		;  } else if (w3 & 0x00f0 == MOVSLIT) {
-	btsc	w3,#3		;
-	bra	op0x98		;   if (w3 & 0x0008 == 0) { // indirect+lit to W
-	rcall	rewrmov		;    rewrmov(&w0, &w1, w2, &w3); // no pre/posts
-	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
-	MOV.B	[w1+w3],w1	;     __asm__("MOV.B [W1+W3],W1");
-	btss	w2,#14		;    else
-	MOV	[w1+w3],w1	;     __asm__("MOV [W1+W3],W1");
-	bra	op0x9X		;   } else { // W to indirect+lit
-op0x98:
-	rcall	rewrmov		;    rewrmov(&w0, &w1, w2, &w3); // no pre/posts
-	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte acces
-	MOV.B
-	btss	w2,#14		;    else
-	MOV
-op0x9X:
-	mov.b	0x0042,w3	;   }
+	bra	op0x		;  } else if (w3 & 0x00f0 == MOVSOFF) {
+	rcall	rewrmov		;   rewrmov(&w0, &w1, w2, &w3); // no pre/posts
+	btsc	w2,#14		;   if (w2 & (1 << 14)) // Byte access
+	MOV.B	[w1],w1		;    __asm__("MOV.B [W1],W1");
+	btss	w2,#14		;   else
+	MOV	[w1],w1		;    __asm__("MOV [W1],W1");
+	mov.b	0x0042,w3	;
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
@@ -518,23 +508,44 @@ w4w15br:
 rbaseok:
 	return			;} // rewrite()
 	
+	;; stack upon entry:
+	;; SP-0x02=PC15..0 of return instruction in adrtrap()
+	;; SP-0x04=PC22..16 of return instruction in adrtrap()
+	;; SP-0x06=TBLPAG when instruction trap occurred
+	;; SP-0x08=W3 when instruction trap occurred
+	;; SP-0x0a=W2 when instruction trap occurred
+	;; SP-0x0c=W1 when instruction trap occurred
+	;; SP-0x0e=W0 when instruction trap occurred
+	;; SP-0x10=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
+rewrmov:	
+	sl	w2,#1,w1	; w3=00000000 1001?kkk, w2=kBkkkddd dkkkssss
+	rlc	w3,#7,w1	; w1=01001?kk kk000000
+	lsr	w2,#3,w0	;                       w0=000kBkkk ddddkkks
+	swap.b	w0,w0		;                       w0=000kBkkk kkksdddd
+	lsr	w0,#5,w0	;                       w0=00000000 kBkkkkkk
+	and	w0,#0x03f,w0	;                       w0=00000000 00kkkkkk
+	ior	w0,w1,w3	; w3=01001?kk kkkkkkkk
+	
+	btss	w3,#10		;         ^
+	bra	
 	
 coo1cpy:	
-	mov	#0xc001,W0	;void coo1cpy(uint16_t** ee0x000) {
-	mov	WREG,EE|0x0000	; do { 
-	mov	#EE|0x0000,W1	;  *ee0x000 = EE | ((uint16_t*) 0);   
-	mov	[W1],W2		;
-	cpseq	W2,W0		;  **ee0x000 = 0xc001;
+	mov	#0xc001,w0	;void coo1cpy(uint16_t** ee0x000) {
+	mov	wreg,EE|0x0000	; do { 
+	mov	#EE|0x0000,w1	;  *ee0x000 = EE | ((uint16_t*) 0);   
+	mov	[w1],w2		;
+	cpseq	w2,w0		;  **ee0x000 = 0xc001;
 	bra	coo1cpy		; } while (**ee0x000 != 0xc001);
 	return			;} // coolcpy()
 	
 main:
 	rcall	coo1cpy		;void main(void) {
-	mov	#adrtrap,W0	; uint16_t w2, * ee_base, * flash_base;
-	mov	#0x03fe,W2	; coo1cpy(&ee_base);
+	mov	#adrtrap,w0	; uint16_t w2, * ee_base, * flash_base;
+	mov	#0x03fe,w2	; coo1cpy(&ee_base);
 autocpy:
-	mov	[W0+W2],[W1+W2]	; flash_base = 0x000100;
-	dec2	W2		; for (w2 = 0x3fe; w2 >= 0; w2--)
+	mov	[w0+w2],[w1+w2]	; flash_base = 0x000100;
+	dec2	w2		; for (w2 = 0x3fe; w2 >= 0; w2--)
 	bra	N,autocpy	;  ee_base[w2] = flash_base[w2];
 
 ;;; now try switching to the alternate vector table and doing another copy!
