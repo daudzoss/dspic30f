@@ -172,6 +172,8 @@ op0x70:
 	IOR.B	w3,w1,w1	;     __asm__("IOR.B W3,W1,W1");
 	btss	w2,#14		;    else
 	IOR	w3,w1,w1	;     __asm__("IOR W3,W1,W1");
+	mov.b	0x0042,w3	;
+	mov.b	w3,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
 	bra	op0x7X		;   } else {
 op0x78:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
@@ -181,10 +183,8 @@ op0x78:
 	btss	w2,#14		;    else
 	MOV	[w1+w3],w1	;     __asm__("MOV [W1+W3],W1");
 op0x7X:
-	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
-	rcall	writebk		;   writebk(&w0, w1);
-	bra	advanpc		;
+	rcall	writebk		;   }
+	bra	advanpc		;   writebk(&w0, w1);
 
 op0x90:	lsr	w3,#4,w0	;
 	mov.b	#0x09,w1	;
@@ -195,8 +195,6 @@ op0x90:	lsr	w3,#4,w0	;
 	MOV.B	[w1],w1		;    __asm__("MOV.B [W1],W1");
 	btss	w2,#14		;   else
 	MOV	[w1],w1		;    __asm__("MOV [W1],W1");
-	mov.b	0x0042,w3	;
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 	
@@ -463,12 +461,12 @@ rewrite:
 	btsc	w0,#0		;
 	bra	seeprom		;  if ((*w0) & 1 == 0) // RAM address
 	mov	[w0],w1		;   *w1 = **w0; // store contents in w1 for oper
-	bra	srcdone		;  else // EEPROM address
+	bra	srcdone		;  else { // EEPROM address
 seeprom:
 	mov	#0x007f,w1	;
 	mov	w1,0x0032	;   TBLPAG = 0x007f;
-	bclr	w0,#0		;
-	tblrdl	[w0],w1		;   *w1 = *((*w0) & 0xfffe);
+	bclr	w0,#0		;   *w1 = *((*w0) & 0xfffe);
+	tblrdl	[w0],w1		;  }
 	bra	srcdone		; } else
 sconst:	
 	and	w2,#0x1f,w1	;  *w1 = w2 & 0x1f; // constant encoded in instr
@@ -519,16 +517,56 @@ rbaseok:
 	;; SP-0x10=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 rewrmov:	
-	sl	w2,#1,w1	; w3=00000000 1001?kkk, w2=kBkkkddd dkkkssss
-	rlc	w3,#7,w1	; w1=01001?kk kk000000
-	lsr	w2,#3,w0	;                       w0=000kBkkk ddddkkks
-	swap.b	w0,w0		;                       w0=000kBkkk kkksdddd
-	lsr	w0,#5,w0	;                       w0=00000000 kBkkkkkk
-	and	w0,#0x03f,w0	;                       w0=00000000 00kkkkkk
-	ior	w0,w1,w3	; w3=01001?kk kkkkkkkk
-	
-	btss	w3,#10		;         ^
-	bra	
+	sl	w2,#1,w1	; // w3=00000000 1001?kkk, w2=kBkkkddd dkkkssss
+	rlc	w3,#7,w1	; // w1=01001?kk kk000000
+	lsr	w2,#3,w0	; //                       w0=000kBkkk ddddkkks
+	swap.b	w0,w0		; //                       w0=000kBkkk kkksdddd
+	lsr	w0,#5,w0	; //                       w0=00000000 kBkkkkkk
+	and	#0x003f,w0	; //                       w0=00000000 00kkkkkk
+	ior	w0,w1,w3	;extern extract_slit10();//w3=01001?kk kkkkkkkk
+	btsc	w3,#10		;void rewrmov(u16* w0,u16* w1,u16 w2,u16* w3) {
+	bra	mov2off		; if ((*w3=extract_slit10(w2,*w3))&0x0400 == 0){
+	sl	w3,#6,w3	;  // MOV{.B} [Ws+Slit10],Wnd
+	asr	w3,#5,w3	;  *w3 = (int16_t)((int10_t)w3);//sign-extend w3
+	btsc	w2,#14		;  if (w2 & (1<<12) == 0) // Byte mode halfrange
+	asr	w3,#1,w3	;   *w3 <<= 1;// but Word range is -1024 to 1022
+	sl	w2,#1,w1	;
+	and	#0x01e,w1	;  *w1 = (w2 << 1) & 0x001e;
+	relolow	w1,0		;
+	mov	[w1],w1		;
+	add	w3,w1,w1	;
+	relolow	w1,1		;  *w1 = relolow(*relolow(*w1)+w3); // src addr
+	fixwadr	w1		;  fixwadr(w1); // address "fixed" if in EEPROM
+	btsc	w1,#0		;
+	bra	mseprom		;  if ((*w1) & 1 == 0) // RAM address
+	mov	[w1],w1		;   *w1 = **w1; // store contents in w1 for oper
+	bra	msdone		;  else { // EEPROM address
+mseprom:
+	mov	#0x007f,w3	;
+	mov	w3,0x0032	;   TBLPAG = 0x007f;
+	bclr	w1,#0		;
+	tblrdl	[w1],w1		;   *w1 = *((*w1) & 0xfffe);
+msdone:	
+	lsr	w2,#6,w0	;  }
+	and	w0,#0x01e,w0	;
+	relolow	w0,0		;  *w0 = relolow((w2 >> 6) & 0x001e);// dst addr
+	bra	mreturn		; } else {
+mov2off:	
+	sl	w3,#6,w3	;  // MOV{.B} Wns,[Wd+Slit10]
+	asr	w3,#5,w3	;  *w3 = (int16_t)((int10_t)w3);//sign-extend w3
+	btsc	w2,#14		;  if (w2 & (1<<12) == 0) // Byte mode halfrange
+	asr	w3,#1,w3	;   *w3 <<= 1;// but Word range is -1024 to 1022
+	lsr	w2,#6,w0	;
+	and	#0x01e,w0	;  *w0 = (w2 >> 6) & 0x001e;
+	relolow	w0,0		;
+	mov	[w0],w0		;
+	add	w3,w0,w0	;
+	relolow	w0,1		;  *w0 = relolow(*relolow(*w0)+w3); // dst addr
+	sl	w2,#1,w1	;
+	and	w1,#0x01e,w1	;
+	relolow	w1,0		;  *w1 = relolow((w2 << 1) & 0x001e);// src addr
+mreturn:	
+	return			; } } // rewrmov()
 	
 coo1cpy:	
 	mov	#0xc001,w0	;void coo1cpy(uint16_t** ee0x000) {
