@@ -186,9 +186,10 @@ op0x7X:
 	rcall	writebk		;   }
 	bra	advanpc		;   writebk(&w0, w1);
 
-op0x90:	lsr	w3,#4,w0	;
+op0x90:
+	lsr	w3,#4,w0	;
 	mov.b	#0x09,w1	;
-	cpseq	w0,w1		;
+	cpseq.b	w0,w1		;
 	bra	op0x		;  } else if (w3 & 0x00f0 == MOVSOFF) {
 	rcall	rewrmov		;   rewrmov(&w0, &w1, w2, &w3); // no pre/posts
 	btsc	w2,#14		;   if (w2 & (1 << 14)) // Byte access
@@ -198,25 +199,62 @@ op0x90:	lsr	w3,#4,w0	;
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 	
+op0xa0:	
+	lsr	w3,#4,w0	;
+	mov.b	#0x0a,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0xb0		;  } else if (w3 & 0x00f0 = BTSTCLR) {
+	btst.c	w2,#15		;
+	rlc	w3,#1		;
+	and	#0x0001f,w3	;
+	bra	w3		;   switch (w3 & 0x000f) {
+	nop			;
+	bra	dobset		;   case 0x0: goto dobset;
+	nop			;
+	bra	dobclr		;   case 0x1: goto dobclr;
+	nop			;
+	bra	dobtg		;   case 0x2: goto dobtg;
+	bra	dobtstc		;   case 0x3: goto (w2 & (1 << 15) ) ? dobtstc :
+	bra	dobtstz		;                                      dobtstz;
+	bra	dobtssc		;   case 0x4: goto (w2 & (1 << 15) ) ? dobtssc :
+	bra	dobtssz		;                                      dobtssz;
+	bra	dobts5c		;   case 0x5: goto (w2 & (1 << 15) ) ? dobtssc :
+	bra	dobts5z		;
+	nop			;   case 0x6: goto dobtss;
+	bra	dobtss		;
+	nop			;   case 0x7: goto dobtsc;
+	bra	dobtsc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	dobswc		;   case 0xd: goto (w2 & (1 << 15) ) ? dobswc :
+	bra	dobswz		;                                      dobswz;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;
+	bra	advanpc		;   }
+
 op0x:	
 	lsr	w3,#4,w0	;
 	mov	#0x,w1		;
-	cpseq	w0,w1		;
+	cpseq.b	w0,w1		;
 	bra	op0x		;
 op0x:	
 	lsr	w3,#4,w0	;
 	mov	#0x,w1		;
-	cpseq	w0,w1		;
+	cpseq.b	w0,w1		;
 	bra	op0x		;
 op0x:	
 	lsr	w3,#4,w0	;
 	mov	#0x,w1		;
-	cpseq	w0,w1		;
-	bra	op0x		;
-op0x:	
-	lsr	w3,#4,w0	;
-	mov	#0x,w1		;
-	cpseq	w0,w1		;
+	cpseq.b	w0,w1		;
 	bra	op0x		;
 	
 	;; advance the stacked PC by one instruction (if not a branch)
@@ -237,7 +275,87 @@ adrdone:
 	bclr	0x0080,#3	; } INTCON1 &= ~(1 << ADDRERR);
 	mov.d	[--w15],w2	; w3 = *--sp, w2 = *--sp;
 	mov.d	[--w15],w0	; w1 = *--sp, w0 = *--sp;
-	retfie			;} // adrtrap()
+	retfie			;//
+	
+
+
+
+
+
+dobset:
+	rcall	rewrbop		; dobset: rewrbop(&w0, &w1, w2, &w3); // w1 w3 alt bits
+	and	#??,w1		;
+	
+	lsr	w2,#12,w2	; w1 = w2 >> 12; // bit number to act on
+	MOV	#0x0042,w3	; __asm__("MOV #SR,W3"); // BSET [W]
+	BSET	[w3],#0		; __asm__("BSET [W3],#0");
+	BSW.C	[w1],w2		; __asm__("BSW.C [W0],W1");
+	rcall	writebk		; writebk(&w0);
+	bra	advanpc		; goto advanpc;
+dobclr:	
+	rcall	rewrbop		; dobclr: rewrbop(&w0, &w2, w2);
+	lsr	w2,#12,w1	; w1 = w2 >> 12; // bit number to act on
+	MOV	#0x0042,w3	; __asm__("MOV #SR,W3"); // BCLR [W]
+	BCLR	[w3],#0		; __asm__("BCLR [W3],#0");
+	BSW.C	[w0],w1		; __asm__("BSW.C [W0],W1");
+	rcall	writebk		; writebk(&w0);
+	bra	advanpc		; goto advanpc;
+dobtg:	
+dobts2c:	
+dobts2z:	
+dobtssc:	
+dobtssz:	
+dobts5c:	
+dobts5z:	
+dobtss:	
+dobtsc:	
+dobswc:	
+dobswz:	
+	
+	
+	nop			;   case 0x0: __asm__("");
+	nop			;
+	BSET			;
+	bra	op0xaX		;   break;
+	
+
+
+				;} // adrtrap()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 .macro	fixwadr	w
 	btsc	\w,#0		;inline void fixwadr(uint16_t* *w) {
@@ -409,7 +527,7 @@ addrmod:
 	;; SP-0x10=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 .macro	eepromw	code,scratch,adreg
-	mov	#0x4044,\scratch;inline void eepromw(int code, uint16_t adreg) {
+	mov	\code,\scratch	;inline void eepromw(int code, uint16_t adreg) {
 	mov	\scratch,0x0760	; NVMCON = 0x4044; // per DS70138C EXAMPLE 6-3,4
 	mov	0x007f,\scratch	;
 	mov	\adreg,0x0762	; NVMADR = adreg;
@@ -424,7 +542,7 @@ addrmod:
 	nop			;
 	nop			;
 	btsc	0x0760,#15	; do {} while (NVMCON & (1 << WR));
-	bra	.-2		;}
+	bra	.-2		;} // eepromw()
 .endm	
 	
 writebk:	
@@ -438,7 +556,7 @@ e2write:
 	eepromw	0x4044,w2,w0	;  *w0 = w1; // put the data into the latch
         tblwtl	w1,[w0]		;  eepromw(w2 = EEPROM_WRITE_WORD, w0);
 	eepromw	0x4004,w2,w0	; }
-	return			;}
+	return			;} // writebk()
 
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of return instruction in adrtrap()
