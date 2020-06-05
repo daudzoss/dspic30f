@@ -336,9 +336,9 @@ dobtss:
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
 	rlnc	w3,w2,w3	; w3 = 1 << w2;
 	and	w3,[w1],w1	; w1 = w3 & *w1;
-	BTSC	[w0],#1		;
-	rcall	nextins		; __asm__("BTSC [w0],#Z:RCALL nextins"); [sic] 
-	bra	advanpc		; goto advanpc;
+	btss	[w0],#1		; if (w1) // AND result was nonzero
+	rcall	nextins		;  nextins(); // so we skip an instruction
+	bra	advanpc		; goto advanpc; // then a subsequent nextins()
 
 dobtsc:
 	rcall	rewrbop		; dobtsc: rewrbop(&w0, &w1, &w2, &w3);
@@ -346,9 +346,9 @@ dobtsc:
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
 	rlnc	w3,w2,w3	; w3 = 1 << w2;
 	and	w3,[w1],w1	; w1 = w3 & *w1;
-	BTSS	[w0],#1		;
-	rcall	nextins		; __asm__("BTSS [w0],#Z:RCALL nextins"); [sic] 
-	bra	advanpc		; goto advanpc;
+	btsc	[w0],#1		; if (!w1) // AND result was zero
+	rcall	nextins		;  nextins(); // so we skip an instruction
+	bra	advanpc		; goto advanpc; // then a subsequent nextins()
 
 dobsw:
 	rcall	rewrbop		; dobtsc: rewrbop(&w0, &w1, &w2, &w3);
