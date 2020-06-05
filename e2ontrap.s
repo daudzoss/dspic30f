@@ -225,9 +225,13 @@ op0xa0:
 
 op0xb0:
 	lsr	w3,#4,w0	;
-	mov	#0x,w1		;
+	mov	#0x0b,w1	;
 	cpseq.b	w0,w1		;
-	bra	op0x		;
+	bra	op0xc0		;  } else if (w3 & 0x00f0 == MUL_TBL) {
+
+
+
+	
 op0x:
 	lsr	w3,#4,w0	;
 	mov	#0x,w1		;
