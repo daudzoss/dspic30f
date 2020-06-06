@@ -253,20 +253,67 @@ op0xb0:
 	mov	#0x0b,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0xc0		;  } else if (w3 & 0x00f0 == MUL_TBL) {
-
-
-
+	and	w3,#0x0e,w0	;
+	mov	#0x08,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0xba		;   if (w3 & 0x000e == MULSUSU)
+	rrc	w3,#1,w3	;
+	rrc	w2,#13,w3	;
+	and	#0xc0,w3	;
+	bra	w3		;    switch (((w3 & 1) << 1) | (w2 >> 15)) {
+	rcall	rewrmul		;    case 0: rewritm(&w0, &w1, &w2, &w3);
+	MUL.UU  W3,W1,W2	;            __asm__("MUL.UU W3,W1,W2");
+	rcall	writebm		;            writebm(&w0, w2, w3);
+	bra	advanpc		;            break;
+	rcall	rewrmul		;    case 1: rewritm(&w0, &w1, &w2, &w3);
+	MUL.US	W3,W1,W2	;            __asm__("MUL.US W3,W1,W2");
+	rcall	writebm		;            writebm(&w0, w2, w3);
+	bra	advanpc		;            break;
+	rcall	rewrmul		;    case 2: rewritm(&w0, &w1, &w2, &w3);
+	MUL.SU	W3,W1,W2	;            __asm__("MUL.SU W3,W1,W2");
+	rcall	writebm		;            writebm(&w0, w2, w3);
+	bra	advanpc		;            break;
+	rcall	rewrmul		;    case 3: rewritm(&w0, &w1, &w2, &w3);
+	MUL.SS	W3,W1,W2	;            __asm__("MUL.SS W3,W1,W2");
+	rcall	writebm		;            writebm(&w0, w2, w3);
+	bra	advanpc		;            break;
+op0xba:
+	and	w3,#0x0e,w0	;
+	mov	#0x0a,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0xbe		;   else if (w3 & 0x000e == TBLRWHL) {
+	rrc	w3,#1,w3	;
+	rrc	w2,#13,w2	;
+	and	#0xe0,w2	;    w2 = ((w3 & 1) << 3) | ((w2 >> 13) & 0x06);
+	rcall	rewr???		;    rewr???(&w0, &w1, w2, &w3);
+	bra	w3		;    switch ((((w3 & 1) << 2) | (w2 >> 14))/2) {
+	TBLRDL.W [W1],W1	;    case 0: __asm__("TBLRDL.W W1,[W0]");
+	bra	tbldone		;            writebk(&w0, w1); break;
+	TBLRDL.B [W1],W1	;    case 1: __asm__("TBLRDL.B W1,[W0]");
+	bra	tbldone		;            writebk(&w0, w1); break;
+	TBLRDH.W [W1],W1	;    case 2: __asm__("TBLRDH.W W1,[W0]");
+	bra	tbldone		;            writebk(&w0, w1); break;
+	TBLRDH.B [W1],W1	;    case 3: __asm__("TBLRDH.B W1,[W0]");
+	bra	tbldone		;            writebk(&w0, w1); break;
+	TBLWTL.W W1,[W0]	;    case 4: __asm__("TBLWT.W W1,[W0]");
+	bra	advanpc		;            break;
+	TBLWTL.B W1,[W0]	;    case 5: __asm__("TBLWT.B W1,[W0]");
+	bra	advanpc		;            break;
+	TBLWTH.W W1,[W0]	;    case 6: __asm__("TBLWT.W W1,[W0]");
+	bra	advanpc		;            break;
+	TBLWTH.B W1,[W0]	;    case 7: __asm__("TBLWT.B W1,[W0]");
+	bra	advanpc		;            break;
+tbldone:	
+	rcall	writebk		;
+	bra	advanpc		;
+op0xbe:
+	and	w3,#0x0f,w0	;
+	mov	#0x0e,w1	;
+	cpseq	w0,w1		;
+	bra	op0xc0		;   } else if (w3 & 0x000f == MOVD)
 	
-op0x:
-	lsr	w3,#4,w0	;
-	mov	#0x,w1		;
-	cpseq.b	w0,w1		;
-	bra	op0x		;
-op0x:
-	lsr	w3,#4,w0	;
-	mov	#0x,w1		;
-	cpseq.b	w0,w1		;
-	bra	op0x		;
+	
+op0xc0:
 
 	;; advance the stacked PC by one instruction (e.g. if not a branch/skip)
 advanpc:
