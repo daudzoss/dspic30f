@@ -385,8 +385,87 @@ writebs:
 	mov.b	0x0042,w3	;   }
 	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
 	rcall	writebk		;   writebk(&w0, w1);
+	bra	advanpc		;
 
-op0xe0:	
+op0xe0:
+	sl	w3,#1,w3	;  } else {
+	and	w3,#0x17,w3	;   // N B N N N
+	btsc	w2,#14		;   //  \ \ \ \ \_w2 bit 15
+	ior	w3,#0x04,w3	;   //   \ \ \ \_w3 bit 0
+	rlc	w2,#1,w0	;   //    \ \ \_w3 bit 1
+	rlc	w3,#1,w3	;   //     \ \_w2 bit 14 (Byte mode flag)
+	sl	w3,#1,w3	;   //      \_w3 bit 3
+	mov	w3,[w15++]	;   uint16_t temp = (w3&0x0b)|((w2&0x4000)?4:0);
+	rcall	rewrite		;   rewrite(&w0, &w1, w2, &w3); // need W3+B bit
+	mov	[--w15],w2	;
+	bra	w2		;   switch (w2 = (temp<<1) | (w2&(1<<15)?1:0)) {
+	CP0	W1		;   case 0x00: __asm__("CP0 W1");
+	bra	writebc		;	    goto writebc;
+	nop			;   case 0x01: goto advanpc; // non-canonical bits
+	bra	advanpc		;
+	CPB	W3,W1		;   case 0x02: __asm__("CPB W3,W1");
+	bra	writebc		;	    goto writebc;
+		W1,W1		;   case 0x03: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x04: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x05: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x06: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x07: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+	CP0.B	W1		;   case 0x08: __asm__("CP0.B W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x09: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+	CPB.B	W3,W1		;   case 0x0a: __asm__("CPB.B W3,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x0b: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x0c: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x0d: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x0e: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x0f: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x10: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x11: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x12: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x13: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x14: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x15: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x16: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x17: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x18: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x19: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x1a: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x1b: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x1c: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x1d: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x1e: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+		W1,W1		;   case 0x1f: __asm__(" W1,W1");
+	bra	writebc/incdecs		;	    goto ;
+writebc:
+
+incdecs:	
 	;; advance the stacked PC by one instruction (e.g. if not a branch/skip)
 advanpc:
 	rcall	nextins		; advanpc: nextins();  poptpag:
