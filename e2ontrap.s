@@ -9,16 +9,23 @@
 ;;; the area between 0x2800 and the PSV window at 0x8000 is always unmapped)
 ;;;
 ;;; can't utilize PUSH.S shadow registers to speed entry/exit since not readable
-	org	0x000000
+;;;
+;;; FIXME: much unnecessary pushing can be solved with better register roles:
+;;;                   current                       suggested
+;;; w0=wreg           address of output operand     opcode
+;;; w1                input operand (or address of) input operand (or address of)
+;;; w2                opcode                        address of output operand
+;;; w3                base operand (and scratch)    base operand (and scratch)
+	.org	0x000000
 	goto	main
 
-	org	0x000008
+	.org	0x000008
 	.pword	adrtrap
 
-	org	0x000088
+	.org	0x000088
 	.pword	0x7ffc00
 
-	org	0x000100
+	.org	0x000100
 
 ;;; adrtrap
 	;; stack upon entry:
@@ -35,9 +42,9 @@
 	;; SP-0x0e=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 adrtrap:
 .ifdef B0REQUIRED1
-EE	equ	0x0001
+	.equ	EE,0x0001
 .else
-EE	equ	0x0000
+	.equ	EE,0x0000
 .endif
 	mov.d	w0,[w15++]	;void adrtrap(uint16_t* sp) {
 	mov.d	w2,[w15++]	; *sp++ = w0, *sp++ = w1;
@@ -73,8 +80,10 @@ op0x10:
 	bra	op0x1X		;   } else {
 op0x18:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	mov.b	[w15-13],w2	;
-	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
+	mov	w0,[w15++]	;
+	mov.b	[w15-15],w0	;
+	mov.b	wreg,0x0042	;
+	mov	[--w15],w0	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
 .ifndef	B0REQUIRED1
 	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
 	SUBBR.B	w3,w1,w1	;     __asm__("SUBBR.B W3,W1,W1");
@@ -82,8 +91,10 @@ op0x18:
 .endif
 	SUBBR	w3,w1,w1	;     __asm__("SUBBR W3,W1,W1");
 op0x1X:
-	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w3,w0		;
+	mov.b	0x0042,wreg	;   }
+	mov.b	w0,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w3,w0		;
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 
@@ -104,8 +115,10 @@ op0x40:
 	bra	op0x4X		;   } else {
 op0x48:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	mov.b	[w15-13],w2	;
-	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //C
+	mov	w0,[w15++]	;
+	mov.b	[w15-15],w0	;
+	mov.b	wreg,0x0042	;
+	mov	[--w15],w0	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //C
 .ifndef	B0REQUIRED1
 	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
 	ADDC.B	w3,w1,w1	;     __asm__("ADDC.B W3,W1,W1");
@@ -113,8 +126,10 @@ op0x48:
 .endif
 	ADDC	w3,w1,w1	;     __asm__("ADDC W3,W1,W1");
 op0x4X:
-	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	;   }
+	mov.b	w0,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 
@@ -135,8 +150,10 @@ op0x50:
 	bra	op0x5X		;   } else {
 op0x58:
 	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
-	mov.b	[w15-13],w2	;
-	mov.b	w2,0x0042	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
+	mov	w0,[w15++]	;
+	mov.b	[w15-15],w0	;
+	mov.b	wreg,0x0042	;
+	mov	[--w15],w0	;    SR = (SR & 0xff00) | (sp[-7] & 0x00ff); //B
 .ifndef	B0REQUIRED1
 	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
 	SUBB.B	w3,w1,w1	;     __asm__("SUBB.B W3,W1,W1");
@@ -144,8 +161,10 @@ op0x58:
 .endif
 	SUBB	w3,w1,w1	;     __asm__("SUBB W3,W1,W1");
 op0x5X:
-	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	;   }
+	mov.b	w0,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 
@@ -173,8 +192,10 @@ op0x68:
 .endif
 	XOR	w3,w1,w1	;     __asm__("XOR W3,W1,W1");
 op0x6X:
-	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	;   }
+	mov.b	w0,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;
 
@@ -192,8 +213,10 @@ op0x70:
 	btss	w2,#14		;    else
 .endif
 	IOR	w3,w1,w1	;     __asm__("IOR W3,W1,W1");
-	mov.b	0x0042,w3	;
-	mov.b	w3,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	;
+	mov.b	w0,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	bra	op0x7X		;   } else {
 op0x78:
 	rcall	rewrm78		;    rewrm78(&w0, &w1, w2, &w3);
@@ -330,8 +353,10 @@ op0xc0:
 	btss	w2,#15		;    else
 	FF1R	W1,W1		;     __asm__("FF1R W1,W1");
 	rcall	writebk		;    writebk(&w0, w1);
-	mov.b	0x0042,w3	;
-	mov.b	w3,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	;
+	mov.b	w0,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	bra	advanpc		;
 
 op0xd0:
@@ -384,8 +409,10 @@ op0xd0:
 	RRC.B	w1,w1		;    case 0xf: __asm__("RRC.B W1,W1");
 	bra	writebs		;              break;
 writebs:
-	mov.b	0x0042,w3	;    }
-	mov.b	w3,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	;    }
+	mov.b	w0,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	rcall	writebk		;    writebk(&w0, w1);
 	bra	advanpc		;   } else {
 op0xdf:	
@@ -470,8 +497,10 @@ op0xe0:
 	SETM.B	W1		;   case 0x1f: __asm__("SETM.B W1");// 1011 11
 ;	nop			;
 writebc:
-	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	;   }
+	mov.b	w0,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	rcall	writebk		;   writebk(&w0, w1);
 	bra	advanpc		;  }
 
@@ -519,8 +548,10 @@ dobtst3:
 	BTST.Z	[w1],w2		;  __asm__("BTST.Z [W1],W2");
 	btss	w2,#15		; else
 	BTST.C	[w1],w2		;  __asm__("BTST.C [W1],W2");
-	mov.b	0x0042,w3	; // w0=w1=address, w2=Z|00000000000|bitnum
-	mov.b	w3,[w15-13]	; sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	; // w0=w1=address, w2=Z|00000000000|bitnum
+	mov.b	w0,[w15-13]	; sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	bra	advanpc		; goto advanpc;
 dobtsts:
 	rcall	rewrbop		; dobtst3: rewrbop(&w0, &w1, &w2, &w3);
@@ -528,8 +559,10 @@ dobtsts:
 	BTST.Z	[w1],w2		;  __asm__("BTST.Z [W1],W2");
 	btss	w2,#15		; else
 	BTST.C	[w1],w2		;  __asm__("BTST.C [W1],W2");
-	mov.b	0x0042,w3	; // w0=w1=address, w2=Z|00000000000|bitnum
-	mov.b	w3,[w15-13]	; sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	; // w0=w1=address, w2=Z|00000000000|bitnum
+	mov.b	w0,[w15-13]	; sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	mov	w1,w0		; w0 = w1;
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
 	rlnc	w3,w2,w3	; w3 = 1 << w2;
@@ -554,8 +587,10 @@ bbaseok:
 	BTST.Z	[w1],w3		;  __asm__("BTST.Z [W1],W2");
 	btss	w2,#15		; else
 	BTST.C	[w1],w3		;  __asm__("BTST.C [W1],W2");
-	mov.b	0x0042,w3	; // w0=w1=address, w2=Z|00000000000|bitnum
-	mov.b	w3,[w15-13]	; sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
+	mov.b	0x0042,wreg	; // w0=w1=address, w2=Z|00000000000|bitnum
+	mov.b	w0,[w15-13]	; sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	exch	w0,w3		;
 	bra	advanpc		; goto advanpc;
 dobtss:
 	rcall	rewrbop		; dobtss: rewrbop(&w0, &w1, &w2, &w3);
