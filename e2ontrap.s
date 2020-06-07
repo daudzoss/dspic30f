@@ -1,5 +1,5 @@
 ;;; e2ontrap.s
-;;; 
+;;;
 ;;; intercepts misaligned memory accesseses to map the EEPROM into main memory
 ;;; space, using the AddressError Trap Vector to run routines that manipulate
 ;;; it behind the scenes
@@ -24,7 +24,7 @@
 	;; stack upon entry:
 	;; SP-0x02=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x04=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
-	;; 
+	;;
 	;; soon thereafter:
 	;; SP-0x02=W3 when instruction trap occurred
 	;; SP-0x04=W2 when instruction trap occurred
@@ -338,60 +338,66 @@ op0xd0:
 ;	lsr	w3,#4,w0	;
 	mov	#0x0d,w1	;
 	cpseq.b	w0,w1		;
-	bra	op0xe0		;
-	and	w3,#0xc0,w0	;
-	bra	z,advanpc	;  } else if (w3 & 0xfc == SLR_RLR) {
+	bra	op0xe0		;  } else if (w3 & 0xf0 == RSLRNCB) {
+	mov	#0x0f,w1	;
+	and	w1,w3,w0	;
+	cpsne.b	w0,w1		;
+	bra	op0xdf		;   if (w3 & 0x000f == BCL) {
 	mov	w3,[w15++]	;
-	rcall	rewrite		;   rewrite(&w0, &w1, w2, w3); // no base reg.
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, w3); // no base reg.
 	mov	[--w15],w3	;
 	sl	w3,#3,w3	;
 	lsr	w2,#13,w2	;
 	ior	w2,w0,w2	;
 	and	w2,#0x1e	;
-	bra	w2		;   switch (((w3 & 0x03) << 2) | (w2 >> 14)) {
-	SL	w1,w1		;   case 0: __asm__("SL W1,W1");
-	bra	writebs		;           break;
-	SL.B	w1,w1		;   case 1: __asm__("SL.B W1,W1");
-	nop			;           break;
-	bra	advanpc		;   case 2:
+	bra	w2		;    switch (((w3 & 0x03) << 2) | (w2 >> 14)) {
+	SL	w1,w1		;    case 0x0: __asm__("SL W1,W1");
+	bra	writebs		;              break;
+	SL.B	w1,w1		;    case 0x1: __asm__("SL.B W1,W1");
+	nop			;              break;
+	bra	advanpc		;    case 0x2:
 	nop			;
-	bra	advanpc		;   case 3: goto advanpc; // non-canonical bits
+	bra	advanpc		;    case 0x3: goto advanpc;//non-canonical bits
 	bra	writebs		;
-	LSR	w1,w1		;   case 4: __asm__("LSR W1,W1");
-	bra	writebs		;           break;
-	LSR.B	w1,w1		;   case 5: __asm__("LSR.B W1,W1");
-	bra	writebs		;           break;
-	ASR	w1,w1		;   case 6: __asm__("ASR W1,W1");
-	bra	writebs		;           break;
-	ASR.B	w1,w1		;   case 7: __asm__("ASR.B W1,W1");
-	bra	writebs		;           break;
-	RLNC	w1,w1		;   case 8: __asm__("RLNC W1,W1");
-	bra	writebs		;           break;
-	RLNC.B	w1,w1		;   case 9: __asm__("RLNC.B W1,W1");
-	bra	writebs		;           break;
-	RLC	w1,w1		;   case : __asm__("RLC W1,W1");
-	bra	writebs		;           break;
-	RLC.B	w1,w1		;   case : __asm__("RLC.B W1,W1");
-	bra	writebs		;           break;
-	RRNC	w1,w1		;   case : __asm__("RRNC W1,W1");
-	bra	writebs		;           break;
-	RRNC.B	w1,w1		;   case : __asm__("RRNC.B W1,W1");
-	bra	writebs		;           break;
-	RRC	w1,w1		;   case : __asm__("RRC W1,W1");
-	bra	writebs		;           break;
-	RRC.B	w1,w1		;   case : __asm__("RRC.B W1,W1");
-	bra	writebs		;           break;
+	LSR	w1,w1		;    case 0x4: __asm__("LSR W1,W1");
+	bra	writebs		;              break;
+	LSR.B	w1,w1		;    case 0x5: __asm__("LSR.B W1,W1");
+	bra	writebs		;              break;
+	ASR	w1,w1		;    case 0x6: __asm__("ASR W1,W1");
+	bra	writebs		;              break;
+	ASR.B	w1,w1		;    case 0x7: __asm__("ASR.B W1,W1");
+	bra	writebs		;              break;
+	RLNC	w1,w1		;    case 0x8: __asm__("RLNC W1,W1");
+	bra	writebs		;              break;
+	RLNC.B	w1,w1		;    case 0x9: __asm__("RLNC.B W1,W1");
+	bra	writebs		;              break;
+	RLC	w1,w1		;    case 0xa: __asm__("RLC W1,W1");
+	bra	writebs		;              break;
+	RLC.B	w1,w1		;    case 0xb: __asm__("RLC.B W1,W1");
+	bra	writebs		;              break;
+	RRNC	w1,w1		;    case 0xc: __asm__("RRNC W1,W1");
+	bra	writebs		;              break;
+	RRNC.B	w1,w1		;    case 0xd: __asm__("RRNC.B W1,W1");
+	bra	writebs		;              break;
+	RRC	w1,w1		;    case 0xe: __asm__("RRC W1,W1");
+	bra	writebs		;              break;
+	RRC.B	w1,w1		;    case 0xf: __asm__("RRC.B W1,W1");
+	bra	writebs		;              break;
 writebs:
-	mov.b	0x0042,w3	;   }
-	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
-	rcall	writebk		;   writebk(&w0, w1);
-	bra	advanpc		;
-
+	mov.b	0x0042,w3	;    }
+	mov.b	w3,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;    writebk(&w0, w1);
+	bra	advanpc		;   } else {
+op0xdf:	
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3);
+	FBCL	W1,W1		;    __asm__("FBCL W1,W1");
+	rcall	writebk		;    writebk(&w0, w1);
+	bra	advanpc		;   }
 op0xe0:
 	sl	w3,#1,w3	;  } else {
 	and	w3,#0x17,w3	;   // N B N N N
-	btsc	w2,#14		;   //  \ \ \ \ \_w2 bit 15
-	ior	w3,#0x04,w3	;   //   \ \ \ \_w3 bit 0
+	btsc	w2,#14		;   //  \ \ \ \ \_w2 bit 15 (which opcode in box
+	ior	w3,#0x04,w3	;   //   \ \ \ \_w3 bit 0     shown in Table 6-2)
 	rlc	w2,#1,w0	;   //    \ \ \_w3 bit 1
 	rlc	w3,#1,w3	;   //     \ \_w2 bit 14 (Byte mode flag)
 	sl	w3,#1,w3	;   //      \_w3 bit 3
@@ -399,77 +405,79 @@ op0xe0:
 	rcall	rewrite		;   rewrite(&w0, &w1, w2, &w3); // need W3+B bit
 	mov	[--w15],w2	;
 	bra	w2		;   switch (w2 = (temp<<1) | (w2&(1<<15)?1:0)) {
-	CP0	W1		;   case 0x00: __asm__("CP0 W1");
-	bra	writebc		;	    goto writebc;
-	nop			;   case 0x01: goto advanpc; // non-canonical bits
+	CP0	W1		;   case 0x00: __asm__("CP0 W1"); // 0000 00
+	bra	writebs		;	       goto writebs;
+	nop			;   case 0x01: goto advanpc;//non-canonical bits
 	bra	advanpc		;
-	CPB	W3,W1		;   case 0x02: __asm__("CPB W3,W1");
-	bra	writebc		;	    goto writebc;
-		W1,W1		;   case 0x03: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x04: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x05: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x06: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x07: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-	CP0.B	W1		;   case 0x08: __asm__("CP0.B W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x09: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-	CPB.B	W3,W1		;   case 0x0a: __asm__("CPB.B W3,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x0b: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x0c: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x0d: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x0e: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x0f: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x10: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x11: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x12: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x13: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x14: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x15: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x16: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x17: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x18: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x19: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x1a: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x1b: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x1c: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x1d: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x1e: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
-		W1,W1		;   case 0x1f: __asm__(" W1,W1");
-	bra	writebc/incdecs		;	    goto ;
+	CP	W3,W1		;   case 0x02: __asm__("CP W3,W1"); // 0001 00
+	bra	writebs		;	       goto writebs;
+	CPB	W3,W1		;   case 0x03: __asm__("CPB W3,W1"); // 0001 10
+	bra	writebs		;	       break;
+	RLNC	W1,W1		;   case 0x04: __asm__("RLNC W1,W1"); // 0010 00
+	bra	writebc		;	       break;
+	RLC	W1,W1		;   case 0x05: __asm__("RLC W1,W1"); // 0010 10
+	bra	writebc		;	       break;
+	RRNC	W1,W1		;   case 0x06: __asm__("RRNC W1,W1"); // 0011 00
+	bra	writebc		;	       break;
+	RRC	W1,W1		;   case 0x07: __asm__("RRC W1,W1"); // 0011 10
+	bra	writebc		;	       break;
+	CP0.B	W1		;   case 0x08: __asm__("CP0.B W1"); // 0000 01
+	bra	writebs		;	       goto writebs;
+	nop			;   case 0x09: goto advanpc;//non-canonical bits
+	bra	advanpc		;
+	CP.B	W3,W1		;   case 0x0a: __asm__("CP.B W3,W1"); // 0001 01
+	bra	writebs		;	       goto writebs;
+	CPB.B	W3,W1		;   case 0x0b: __asm__("CPB.B W3,W1");// 0001 11
+	bra	writebs		;	       goto writebs;
+	RLNC.B	W1,W1		;   case 0x0c: __asm__("RLNC.B W1,W1");//0010 01
+	bra	writebc		;	       break;
+	RLC.B	W1,W1		;   case 0x0d: __asm__("RLC.B W1,W1");// 0010 11
+	bra	writebc		;	       break;
+	RRNC.B	W1,W1		;   case 0x0e: __asm__("RRNC.B W1,W1");//0011 01
+	bra	writebc		;	       break;
+	RRC.B	W1,W1		;   case 0x0f: __asm__("RRC.B W1,W1");// 0011 11
+	bra	writebc		;	       break;
+	INC	W1,W1		;   case 0x10: __asm__("INC W1,W1"); // 1000 00
+	bra	writebc		;	       break;
+	INC2	W1,W1		;   case 0x11: __asm__("INC2 W1,W1"); // 1000 10
+	bra	writebc		;	       break;
+	DEC	W1,W1		;   case 0x12: __asm__("DEC W1,W1"); // 1001 00
+	bra	writebc		;	       break;
+	DEC2	W1,W1		;   case 0x13: __asm__("DEC2 W1,W1"); // 1001 10
+	bra	writebc		;	       break;
+	NEG	W1,W1		;   case 0x14: __asm__("NEG W1,W1"); // 1010 00
+	bra	writebc		;	       break;
+	COM	W1,W1		;   case 0x15: __asm__("COM W1,W1"); // 1010 10
+	bra	writebc		;	       break;
+	CLR	W1		;   case 0x16: __asm__("CLR W1"); // 1011 00
+	bra	writebc		;	       break;
+	SETM	W1		;   case 0x17: __asm__("SETM W1"); // 1011 10
+	bra	writebc		;	       break;
+	INC.B	W1,W1		;   case 0x18: __asm__("INC.B W1,W1");// 1000 01
+	bra	writebc		;	       break;
+	INC2.B	W1,W1		;   case 0x19: __asm__("INC2.B W1,W1");//1000 11
+	bra	writebc		;	       break;
+	DEC.B	W1,W1		;   case 0x1a: __asm__("DEC.B W1,W1");// 1001 01
+	bra	writebc		;	       break;
+	DEC2.B	W1,W1		;   case 0x1b: __asm__("DEC2.B W1,W1");//1001 11
+	bra	writebc		;	       break;
+	NEG.B	W1,W1		;   case 0x1c: __asm__("NEG.B W1,W1");// 1010 01
+	bra	writebc		;	       break;
+	COM.B	W1,W1		;   case 0x1d: __asm__("COM.B W1,W1");// 1010 11
+	bra	writebc		;	       break;
+	CLR.B	W1		;   case 0x1e: __asm__("CLR.B W1");// 1011 01
+	bra	writebc		;	       break;
+	SETM.B	W1		;   case 0x1f: __asm__("SETM.B W1");// 1011 11
+;	nop			;
 writebc:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(&w0, w1);
+	bra	advanpc		;  }
 
-incdecs:	
 	;; advance the stacked PC by one instruction (e.g. if not a branch/skip)
 advanpc:
-	rcall	nextins		; advanpc: nextins();  poptpag:
-poptpag:
+	rcall	nextins		;  advanpc: nextins();
 .if SD_CACHE_WRITEBACK
 .endif
 	mov	#0x0032,w1	;  w1 = &TBLPAG;
@@ -966,7 +974,7 @@ mreturn:
 ;;;
 ;;; (unlike the above, the value returned in W1 is an address, not a value!)
 ;;;
-;;; 
+;;;
 rewrbop:
 	btst.c	w2,#10		;void rewrbop(uint16_t* w0, uint16_t* w1,
 	and	w3,#0xc0,w0	;             uint16_t* w2, uint16_t* w3) {
@@ -1000,18 +1008,29 @@ bZin11:
 ;;; nextins()
 ;;; advances the Program Counter stored on the stack at the time of the trap
 ;;; by 2 words (to the next 24-bit instruction)
+	;; stack upon entry:
+	;; SP-0x02=PC15..0 of return instruction in adrtrap()
+	;; SP-0x04=PC22..16 of return instruction in adrtrap()
+	;; SP-0x06=TBLPAG when instruction trap occurred
+	;; SP-0x08=W3 when instruction trap occurred
+	;; SP-0x0a=W2 when instruction trap occurred
+	;; SP-0x0c=W1 when instruction trap occurred
+	;; SP-0x0e=W0 when instruction trap occurred
+	;; SP-0x10=PC15..0 of instruction resulting in trap (?)
+	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 nextins:
 	sub	w15,#0x00c,w1	;void nextins(void) {
 	inc2	[w1],[w1]	;
-	bra	nc,poptpag	;
-	sub	w15,#0x00e,w1	;
-	inc	[w1],[w1]	;  *((uint32_t*) &sp[-3]) += 2; // PC += 2
+	bra	nc,nextinc	;
+	sub	w15,#0x012,w1	;
+	inc	[w1],[w1]	;  *((uint32_t*) &sp[-6]) += 2; // PC += 2
+nextinc:
 	return			;} // nextins()
 
 coo1cpy:
 	mov	#0xc001,w0	;void coo1cpy(uint16_t** ee0x000) {
-	mov	wreg,EE|0x0000	; do { 
-	mov	#EE|0x0000,w1	;  *ee0x000 = EE | ((uint16_t*) 0);   
+	mov	wreg,EE|0x0000	; do {
+	mov	#EE|0x0000,w1	;  *ee0x000 = EE | ((uint16_t*) 0);
 	mov	[w1],w2		;
 	cpseq	w2,w0		;  **ee0x000 = 0xc001;
 	bra	coo1cpy		; } while (**ee0x000 != 0xc001);
