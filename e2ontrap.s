@@ -10,12 +10,12 @@
 ;;;
 ;;; can't utilize PUSH.S shadow registers to speed entry/exit since not readable
 ;;;
-;;; FIXME: much unnecessary pushing can be solved with better register roles:
-;;;                   current                       suggested
-;;; w0=wreg           address of output operand     opcode
-;;; w1                input operand (or address of) input operand (or address of)
-;;; w2                opcode                        address of output operand
-;;; w3                base operand (and scratch)    base operand (and scratch)
+;;; FIXME: much unnecessary stacking/exchanging can be solved with better roles.
+;;;                 current:                       suggested:
+;;; w0=wreg         address of output operand      opcode
+;;; w1              input operand (or address of)  input operand (or address of)
+;;; w2              opcode                         address of output operand
+;;; w3              base operand (and scratch)     base operand (and scratch)
 	.org	0x000000
 	goto	main
 
@@ -280,8 +280,8 @@ op0xb0:
 	mov	#0x08,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0xba		;   if (w3 & 0x000e == MULSUSU)
-	rrc	w3,#1,w3	;
-	rrc	w2,#13,w3	;
+	rrc	w3,w3		;
+	lsr	w2,#13,w3	;
 	and	#0xc0,w3	;
 	bra	w3		;    switch (((w3 & 1) << 1) | (w2 >> 15)) {
 	rcall	rewrmul		;    case 0: rewritm(&w0, &w1, &w2, &w3);
@@ -305,10 +305,10 @@ op0xba:
 	mov	#0x0a,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0xbe		;   else if (w3 & 0x000e == TBLRWHL) {
-	rrc	w3,#1,w3	;
-	rrc	w2,#13,w2	;
+	rrc	w3,w3		;
+	lsr	w2,#13,w2	;
 	and	#0xe0,w2	;    w2 = ((w3 & 1) << 3) | ((w2 >> 13) & 0x06);
-	rcall	rewr???		;    rewr???(&w0, &w1, w2, &w3);
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3); // ok to reuse?
 	bra	w3		;    switch ((((w3 & 1) << 2) | (w2 >> 14))/2) {
 	TBLRDL.W [W1],W1	;    case 0: __asm__("TBLRDL.W W1,[W0]");
 	bra	tbldone		;            writebk(&w0, w1); break;
@@ -318,13 +318,13 @@ op0xba:
 	bra	tbldone		;            writebk(&w0, w1); break;
 	TBLRDH.B [W1],W1	;    case 3: __asm__("TBLRDH.B W1,[W0]");
 	bra	tbldone		;            writebk(&w0, w1); break;
-	TBLWTL.W W1,[W0]	;    case 4: __asm__("TBLWT.W W1,[W0]");
+	TBLWTL.W W1,[W0]	;    case 4: __asm__("TBLWTL.W W1,[W0]");
 	bra	advanpc		;            break;
-	TBLWTL.B W1,[W0]	;    case 5: __asm__("TBLWT.B W1,[W0]");
+	TBLWTL.B W1,[W0]	;    case 5: __asm__("TBLWTL.B W1,[W0]");
 	bra	advanpc		;            break;
-	TBLWTH.W W1,[W0]	;    case 6: __asm__("TBLWT.W W1,[W0]");
+	TBLWTH.W W1,[W0]	;    case 6: __asm__("TBLWTH.W W1,[W0]");
 	bra	advanpc		;            break;
-	TBLWTH.B W1,[W0]	;    case 7: __asm__("TBLWT.B W1,[W0]");
+	TBLWTH.B W1,[W0]	;    case 7: __asm__("TBLWTH.B W1,[W0]");
 	bra	advanpc		;            break;
 tbldone:
 	rcall	writebk		;    }
@@ -374,7 +374,7 @@ op0xd0:
 	sl	w3,#3,w3	;
 	lsr	w2,#13,w2	;
 	ior	w2,w0,w2	;
-	and	w2,#0x1e	;
+	and	w2,#0x1e,w2	;
 	bra	w2		;    switch (((w3 & 0x03) << 2) | (w2 >> 14)) {
 	SL	w1,w1		;    case 0x0: __asm__("SL W1,W1");
 	bra	writebs		;              break;
@@ -425,8 +425,8 @@ op0xe0:
 	and	w3,#0x17,w3	;   // N B N N N
 	btsc	w2,#14		;   //  \ \ \ \ \_w2 bit 15 (which opcode in box
 	ior	w3,#0x04,w3	;   //   \ \ \ \_w3 bit 0     shown in Table 6-2)
-	rlc	w2,#1,w0	;   //    \ \ \_w3 bit 1
-	rlc	w3,#1,w3	;   //     \ \_w2 bit 14 (Byte mode flag)
+	rlc	w2,w0		;   //    \ \ \_w3 bit 1
+	rlc	w3,w3		;   //     \ \_w2 bit 14 (Byte mode flag)
 	sl	w3,#1,w3	;   //      \_w3 bit 3
 	mov	w3,[w15++]	;   uint16_t temp = (w3&0x0b)|((w2&0x4000)?4:0);
 	rcall	rewrite		;   rewrite(&w0, &w1, w2, &w3); // need W3+B bit
@@ -507,7 +507,7 @@ writebc:
 	;; advance the stacked PC by one instruction (e.g. if not a branch/skip)
 advanpc:
 	rcall	nextins		;  advanpc: nextins();
-.if SD_CACHE_WRITEBACK
+.ifdef SD_CACHE_WRITEBACK
 .endif
 	mov	#0x0032,w1	;  w1 = &TBLPAG;
 	mov	[--w15],[w1]	;  *w1 = *--w15; // TBLPAG restored
@@ -522,15 +522,16 @@ dobset:
 	rcall	rewrbop		; dobset: rewrbop(&w0, &w1, &w2, &w3);
 	mov	w1,w0		; w0 = w1;
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
-	rlnc	w3,w2,w3	; w3 = 1 << w2;
+	sl	w3,w2,w3	; w3 = 1 << w2;
 	IOR	w3,[w1],w1	; __asm__("IOR W3,[W1],W1");
 	rcall	writebk		; writebk(&w0);
 	bra	advanpc		; goto advanpc;
 dobclr:
 	rcall	rewrbop		; dobclr: rewrbop(&w0, &w1, &w2, &w3);
 	mov	w1,w0		; w0 = w1;
-	mov	#0xfffe,w3	; // w0=w1=address, w2=bitnum
-	rlnc	w3,w2,w3	; w3 = 1 << w2;
+	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
+	sl	w3,w2,w3	;
+	com	w3,w3		; w3 = ~(1 << w2);
 	AND	w3,[w1],w1	; __asm__("AND W3,[W1],W1");
 	rcall	writebk		; writebk(&w0);
 	bra	advanpc		; goto advanpc;
@@ -538,7 +539,7 @@ dobtg:
 	rcall	rewrbop		; dobtg: rewrbop(&w0, &w1, &w2, &w3);
 	mov	w1,w0		; w0 = w1;
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
-	rlnc	w3,w2,w3	; w3 = 1 << w2;
+	sl	w3,w2,w3	; w3 = 1 << w2;
 	XOR	w3,[w0],w1	; __asm__("XOR W3,[W1],W1");
 	rcall	writebk		; writebk(&w0);
 	bra	advanpc		; goto advanpc;
@@ -565,7 +566,7 @@ dobtsts:
 	exch	w0,w3		;
 	mov	w1,w0		; w0 = w1;
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
-	rlnc	w3,w2,w3	; w3 = 1 << w2;
+	sl	w3,w2,w3	; w3 = 1 << w2;
 	IOR	w3,[w1],w1	; __asm__("IOR W3,[W1],W1");
 	rcall	writebk		; writebk(&w0);
 	bra	advanpc		; goto advanpc;
@@ -596,7 +597,7 @@ dobtss:
 	rcall	rewrbop		; dobtss: rewrbop(&w0, &w1, &w2, &w3);
 	mov	#0x0042,w0	;
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
-	rlnc	w3,w2,w3	; w3 = 1 << w2;
+	sl	w3,w2,w3	; w3 = 1 << w2;
 	and	w3,[w1],w1	; w1 = w3 & *w1;
 	btss	[w0],#1		; if (w1) // AND result was nonzero
 	rcall	nextins		;  nextins(); // so we skip an instruction
@@ -605,7 +606,7 @@ dobtsc:
 	rcall	rewrbop		; dobtsc: rewrbop(&w0, &w1, &w2, &w3);
 	mov	#0x0042,w0	;
 	mov	#0x0001,w3	; // w0=w1=address, w2=bitnum
-	rlnc	w3,w2,w3	; w3 = 1 << w2;
+	sl	w3,w2,w3	; w3 = 1 << w2;
 	and	w3,[w1],w1	; w1 = w3 & *w1;
 	btsc	[w0],#1		; if (!w1) // AND result was zero
 	rcall	nextins		;  nextins(); // so we skip an instruction
@@ -738,10 +739,10 @@ postdec:
 	mov	[w0],[w15++]	; uint16_t* w0 = addrnum(w2);
 .ifndef B0REQUIRED1
 	btsc	0x0042,#0	; uint16_t temp = *w0;
-	dec	[w0]		; if (B)
+	dec	[w0],[w0]	; if (B)
 	btss	0x0042,#0	;  *(w0 = (uint8_t*) w0)++;
 .endif
-	dec2	[w0]		; else
+	dec2	[w0],[w0]	; else
 	mov	[--w15],w0	;  *(w0 = (uint16_t*) w0)++;
 	relolow	w0,1		; return relolow(temp);
 	return			;} // postdec()
@@ -750,10 +751,10 @@ postinc:
 	mov	[w0],[w15++]	; uint16_t* w0 = addrnum(w2);
 .ifndef B0REQUIRED1
 	btsc	0x0042,#0	; uint16_t temp =*w0;
-	inc	[w0]		; if (B)
+	inc	[w0],[w0]	; if (B)
 	btss	0x0042,#0	;  *(w0 = (uint8_t*) w0)++;
 .endif
-	inc2	[w0]		; else
+	inc2	[w0],[w0]	; else
 	mov	[--w15],w0	;  *(w0 = (uint16_t*) w0)++;
 	relolow	w0,1		; return relolow(temp);
 	return			;} // postinc()
@@ -801,7 +802,7 @@ preinc:
 	;; SP-0x14=PC15..0 of instruction resulting in trap (?)
 	;; SP-0x16=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 addrmod:
-	rrnc	w2,#4,w0	;uint16_t addrmod(uint16_t w2, uint1_t B) {
+	lsr	w2,#4,w0	;uint16_t addrmod(uint16_t w2, uint1_t B) {
 	and	#0x007,w0	; w0 = w2 >> 4;
 	bra	w0		; switch (w0 & 0x0070) { // src indirect addr
 	bra	direct		;  case 0: return direct(w2);
@@ -816,7 +817,7 @@ addrmod:
 .macro	eepromw	code,scratch,adreg
 	mov	\code,\scratch	;inline void eepromw(int code, uint16_t adreg) {
 	mov	\scratch,0x0760	; NVMCON = code; // per DS70138C EXAMPLE 6-3,4
-	mov	0x007f,\scratch	;
+	mov	#0x007f,\scratch;
 	mov	\adreg,0x0762	; NVMADR = adreg;
 	mov	\scratch,0x0764	; NVMADRU = 0x007f;
 	mov	\scratch,0x0032	; TBLPAG = 0x007f; // need for write (not erase)
@@ -916,12 +917,13 @@ srcdone:
 	rlnc	w2,w2		; // now handle a (never indirect) base register
 	rlnc	w2,w2		; // specified (awkwardly) in opcode bits 18..15
 	sl	w2,#1,w2	; *w3 = 2 * ((*w3 << 1) | (w2 >> 15)); // reg#
-	rlc	w3,#2,w3	; w2 <<= 1;
+	rlc	w3,w3		; w2 <<= 1;
+	rlc	w3,w3		;
 	and	#0x01e,w3	; *w3 &= 0x01e; // w3 now the memory mapped base
 	bclr	0x0042,#0	;
 	btsc	w3,#1		;
 	bset	0x0042,#0	;
-	rrc	w2,#1,w2	; w2 = (w2 >> 1) | (*w3 << 14); // w2 unchanged
+	rrc	w2,w2		; w2 = (w2 >> 1) | (*w3 << 14); // w2 unchanged
 	btsc	w3,#4		;
 	bra	w4w15br		;
 	btsc	w3,#3		;
@@ -953,9 +955,10 @@ rbaseok:
 	;; SP-0x12=SR7..0\IRL3\PC22..16 of instruction resulting in trap (?)
 rewrmov:
 	sl	w2,#1,w1	; // w3=00000000 1001?kkk, w2=kBkkkddd dkkkssss
-	rlc	w3,#7,w1	; // w1=01001?kk kk000000
+	rlc	w3,w1		; // w3=00000001 001?kkkk
+	sl	w3,#6,w1	; // w1=01001?kk kk000000
 	lsr	w2,#3,w0	; //                       w0=000kBkkk ddddkkks
-	swap.b	w0,w0		; //                       w0=000kBkkk kkksdddd
+	swap.b	w0		; //                       w0=000kBkkk kkksdddd
 	lsr	w0,#5,w0	; //                       w0=00000000 kBkkkkkk
 	and	#0x003f,w0	; //                       w0=00000000 00kkkkkk
 	ior	w0,w1,w3	;extern extract_slit10();//w3=01001?kk kkkkkkkk
@@ -1012,9 +1015,10 @@ mreturn:
 ;;;
 rewrbop:
 	btst.c	w2,#10		;void rewrbop(uint16_t* w0, uint16_t* w1,
-	and	w3,#0xc0,w0	;             uint16_t* w2, uint16_t* w3) {
-	bra	nz,bytemod	; uint1_t b = w2 & 0x0400 ? 1 : 0; // Bmode flag
-	lsr	w0,#1,w0	; if (*w3 & 0x00c0) b = 0; // only bset/bclr/btg
+	mov	#0x00c0,w0	;             uint16_t* w2, uint16_t* w3) {
+	and	w3,w0,w0	; uint1_t b = w2 & 0x0400 ? 1 : 0; // Bmode flag
+	bra	nz,bytemod	; if (*w3 & 0x00c0)
+	lsr	w0,#1,w0	;  b = 0; // only bset/bclr/btg [have this flag]
 bytemod:
 	rcall	addrmod		; *w0 = addrmod(w2, c);
 	fixwadr	w0		; fixwadr(w0); // address "fixed" if in EEPROM
@@ -1035,9 +1039,10 @@ bsdone:
 	sl	w2,#1,w2	;  uint1_t c = (*w2) & 0x8000 ? 1 : 0;
 	mov.b	#11,w2		;  // Zwww w000 in H byte -> 000w wwwZ in L byte
 	bsw.c	w2,w2		;  *w2 = ((*w2) && 0x0xf000) >> 11) | c;
-	rlnc	w2,#1,w2	; } else // sign bit contains Z flag, low nybble
+	rlnc	w2,w2		; } else // sign bit contains Z flag, low nybble
 bZin11:
-	rrnc	w2,#12,w2	;  *w2 = ((*w2) & 0x0800) | ((*w2) >> 12);//bbbb
+	repeat	#11	  	;
+	rrnc	w2,w2		;  *w2 = ((*w2) & 0x0800) | ((*w2) >> 12);//bbbb
 	return			;} // rewrbop()
 
 ;;; nextins()
@@ -1064,24 +1069,23 @@ nextinc:
 
 coo1cpy:
 	mov	#0xc001,w0	;void coo1cpy(uint16_t** ee0x000) {
-	mov	wreg,EE|0x0000	; do {
-	mov	#EE|0x0000,w1	;  *ee0x000 = EE | ((uint16_t*) 0);
-	mov	[w1],w2		;
+	mov	#EE|0x0000,w1	; do {
+	mov	[w1],w2		;  *ee0x000 = EE | ((uint16_t*) 0);
 	cpseq	w2,w0		;  **ee0x000 = 0xc001;
 	bra	coo1cpy		; } while (**ee0x000 != 0xc001);
 	return			;} // coolcpy()
 
 main:
 	rcall	coo1cpy		;void main(void) {
-	mov	#adrtrap,w0	; uint16_t w2, * ee_base, * flash_base;
+	mov	#0x0100,w0	; uint16_t w2, * ee_base, * flash_base;
 	mov	#0x03fe,w2	; coo1cpy(&ee_base);
 autocpy:
 	mov	[w0+w2],[w1+w2]	; flash_base = 0x000100;
-	dec2	w2		; for (w2 = 0x3fe; w2 >= 0; w2--)
+	dec2	w2,w2		; for (w2 = 0x3fe; w2 >= 0; w2--)
 	bra	N,autocpy	;  ee_base[w2] = flash_base[w2];
 
 ;;; now try switching to the alternate vector table and doing another copy!
-	bset	0xINTCON2,#15	; INTCON2 |= (1 << ALTIVT);
+	bset	0x0082,#15	; INTCON2 |= (1 << ALTIVT);
 	rcall	coo1cpy		; coo1cpy(&ee_base);
 alldone:
 	bra	alldone		;} // main()
