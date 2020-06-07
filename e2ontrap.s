@@ -56,8 +56,8 @@ EE	equ	0x0000
 	tblrdl	[w2],w2		;  uint16_t w2 = *w3w2 & 0x00ffff;; // arg in w2
 
 	;; march through all opcodes, looking for register-indirect destinations
-op0x10:
 	lsr	w3,#4,w0	;
+op0x10:
 	mov.b	#0x01,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0x40		;  if (w3 & 0x00f0 == SUBR_BR) { //SUBR or SUBBR
@@ -88,7 +88,7 @@ op0x1X:
 	bra	advanpc		;
 
 op0x40:
-	lsr	w3,#4,w0	;
+;	lsr	w3,#4,w0	;
 	mov.b	#0x04,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0x50		;  } else if (w3 & 0x00f0 == ADDADDC) {
@@ -119,7 +119,7 @@ op0x4X:
 	bra	advanpc		;
 
 op0x50:
-	lsr	w3,#4,w0	;
+;	lsr	w3,#4,w0	;
 	mov.b	#0x05,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0x60		;  } else if (w3 & 0x00f0 == SUBSUBB) {
@@ -150,7 +150,7 @@ op0x5X:
 	bra	advanpc		;
 
 op0x60:
-	lsr	w3,#4,w0	;
+;	lsr	w3,#4,w0	;
 	mov.b	#0x06,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0x70		;  } else if (w3 & 0x00f0 == ANDXOR) {
@@ -179,7 +179,7 @@ op0x6X:
 	bra	advanpc		;
 
 op0x70:
-	lsr	w3,#4,w0	;
+;	lsr	w3,#4,w0	;
 	mov.b	#0x07,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0x90		;  } else if (w3 & 0x00f0 == IORMOV) {
@@ -198,7 +198,7 @@ op0x70:
 op0x78:
 	rcall	rewrm78		;    rewrm78(&w0, &w1, w2, &w3);
 ;;; FIXME: rewrm78() must handle pre/post like rewrite() but offsets instead of
-;;; constants, and must finish with w3 clear if not an offset indirect access
+;;; constants, w1 an address (not value), w3 clear if not offset indirect access
 .ifndef	B0REQUIRED1
 	btsc	w2,#14		;    if (w2 & (1 << 14)) // Byte access
 	MOV.B	[w1+w3],w1	;     __asm__("MOV.B [W1+W3],W1");
@@ -210,7 +210,7 @@ op0x7X:
 	bra	advanpc		;   writebk(&w0, w1);
 
 op0x90:
-	lsr	w3,#4,w0	;
+;	lsr	w3,#4,w0	;
 	mov.b	#0x09,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0xa0		;  } else if (w3 & 0x00f0 == MOVSOFF) {
@@ -225,7 +225,7 @@ op0x90:
 	bra	advanpc		;
 
 op0xa0:
-	lsr	w3,#4,w0	;
+;	lsr	w3,#4,w0	;
 	mov.b	#0x0a,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0xb0		;  } else if (w3 & 0x00f0 = BTSTCLR) {
@@ -249,7 +249,7 @@ op0xa0:
 	bra	advanpc		;   }
 
 op0xb0:
-	lsr	w3,#4,w0	;
+;	lsr	w3,#4,w0	;
 	mov	#0x0b,w1	;
 	cpseq.b	w0,w1		;
 	bra	op0xc0		;  } else if (w3 & 0x00f0 == MUL_TBL) {
@@ -303,18 +303,90 @@ op0xba:
 	bra	advanpc		;            break;
 	TBLWTH.B W1,[W0]	;    case 7: __asm__("TBLWT.B W1,[W0]");
 	bra	advanpc		;            break;
-tbldone:	
-	rcall	writebk		;
+tbldone:
+	rcall	writebk		;    }
 	bra	advanpc		;
 op0xbe:
-	and	w3,#0x0f,w0	;
-	mov	#0x0e,w1	;
-	cpseq	w0,w1		;
-	bra	op0xc0		;   } else if (w3 & 0x000f == MOVD)
-	
-	
-op0xc0:
+	mov	#0xbe,w1	;
+	cpseq.b	w3,w1		;
+	bra	op0xc0		;   } else if (w3 & 0x000f == MOVD) {
+	rcall 	rewrm78		;    rewrm78(&w0, &w1, w2, &w3); // ok to reuse?
+	MOV.D	[W1],W2		;    __asm__("MOV.D [W1],W2");
+	rcall	writebd		;    writebd(&w0, w2, w3);
+	bra	advanpc		;   }
 
+op0xc0:
+;	lsr	w3,#4,w0	;
+	mov	#0x0c,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0xd0		;  } else if (w3 & 0x00f0 == FF1) {
+	and	w3,#0xf,w0	;
+	mov	#0x0f,w1	;
+	cpseq.b	w0,w1		;
+	bra	advanpc		;   if (w3 & 0x000f == FF1L_1R) {
+	rcall	rewrite		;    rewrite(&w0, &w1, w2, &w3); // ok to reuse?
+	btsc	w2,#15		;    if (w2 & (1 << 15))
+	FF1L	W1,W1		;     __asm__("FF1L W1,W1");
+	btss	w2,#15		;    else
+	FF1R	W1,W1		;     __asm__("FF1R W1,W1");
+	rcall	writebk		;    writebk(&w0, w1);
+	mov.b	0x0042,w3	;
+	mov.b	w3,[w15-13]	;    sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	bra	advanpc		;
+
+op0xd0:
+;	lsr	w3,#4,w0	;
+	mov	#0x0d,w1	;
+	cpseq.b	w0,w1		;
+	bra	op0xe0		;
+	and	w3,#0xc0,w0	;
+	bra	z,advanpc	;  } else if (w3 & 0xfc == SLR_RLR) {
+	mov	w3,[w15++]	;
+	rcall	rewrite		;   rewrite(&w0, &w1, w2, w3); // no base reg.
+	mov	[--w15],w3	;
+	sl	w3,#3,w3	;
+	lsr	w2,#13,w2	;
+	ior	w2,w0,w2	;
+	and	w2,#0x1e	;
+	bra	w2		;   switch (((w3 & 0x03) << 2) | (w2 >> 14)) {
+	SL	w1,w1		;   case 0: __asm__("SL W1,W1");
+	bra	writebs		;           break;
+	SL.B	w1,w1		;   case 1: __asm__("SL.B W1,W1");
+	nop			;           break;
+	bra	advanpc		;   case 2:
+	nop			;
+	bra	advanpc		;   case 3: goto advanpc; // non-canonical bits
+	bra	writebs		;
+	LSR	w1,w1		;   case 4: __asm__("LSR W1,W1");
+	bra	writebs		;           break;
+	LSR.B	w1,w1		;   case 5: __asm__("LSR.B W1,W1");
+	bra	writebs		;           break;
+	ASR	w1,w1		;   case 6: __asm__("ASR W1,W1");
+	bra	writebs		;           break;
+	ASR.B	w1,w1		;   case 7: __asm__("ASR.B W1,W1");
+	bra	writebs		;           break;
+	RLNC	w1,w1		;   case 8: __asm__("RLNC W1,W1");
+	bra	writebs		;           break;
+	RLNC.B	w1,w1		;   case 9: __asm__("RLNC.B W1,W1");
+	bra	writebs		;           break;
+	RLC	w1,w1		;   case : __asm__("RLC W1,W1");
+	bra	writebs		;           break;
+	RLC.B	w1,w1		;   case : __asm__("RLC.B W1,W1");
+	bra	writebs		;           break;
+	RRNC	w1,w1		;   case : __asm__("RRNC W1,W1");
+	bra	writebs		;           break;
+	RRNC.B	w1,w1		;   case : __asm__("RRNC.B W1,W1");
+	bra	writebs		;           break;
+	RRC	w1,w1		;   case : __asm__("RRC W1,W1");
+	bra	writebs		;           break;
+	RRC.B	w1,w1		;   case : __asm__("RRC.B W1,W1");
+	bra	writebs		;           break;
+writebs:
+	mov.b	0x0042,w3	;   }
+	mov.b	w3,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
+	rcall	writebk		;   writebk(&w0, w1);
+
+op0xe0:	
 	;; advance the stacked PC by one instruction (e.g. if not a branch/skip)
 advanpc:
 	rcall	nextins		; advanpc: nextins();  poptpag:
@@ -329,6 +401,7 @@ adrdone:
 	mov.d	[--w15],w0	; w3 = *--sp, w2 = *--sp;
 	bclr	0x0080,#3	; w1 = *--sp, w0 = *--sp;
 	retfie			; return INTCON1 &= ~(1 << ADDRERR);
+	;; actual exit is above; code below is reached with a goto from switch
 dobset:
 	rcall	rewrbop		; dobset: rewrbop(&w0, &w1, &w2, &w3);
 	mov	w1,w0		; w0 = w1;
@@ -431,7 +504,7 @@ dobsw:
 .ifdef B0REQUIRED1
 	btss	\w,#0		;inline void fixwadr(uint16_t* *w) {
 	bra	2f		;// access EEPROM mapped into a RAM word
-.else	
+.else
 	btsc	\w,#0		;
 	bra	1f		;
 	btss	\w,#14		;// if in EEPROM, will return LSB set, to
@@ -505,7 +578,7 @@ dobsw:
 	and	#0x01e,\dest	; return relolow((rnum << 1) & 0x001e);
 	relolow	\dest,0		;} // addrnum()
 .endm
-	
+
 ;;; direct()
 ;;; indir()
 ;;; postdec()
@@ -797,7 +870,7 @@ mov2off:
 .ifndef	B0REQUIRED1
 	btsc	w2,#14		;  if (w2 & (1<<12) == 0) // Byte mode halfrange
 	asr	w3,#1,w3	;
-.endif	
+.endif
 	lsr	w2,#6,w0	;   *w3 <<= 1;// but Word range is -1024 to 1022
 	and	#0x01e,w0	;  *w0 = (w2 >> 6) & 0x001e;
 	relolow	w0,0		;
