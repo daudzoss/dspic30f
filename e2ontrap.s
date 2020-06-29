@@ -46,18 +46,20 @@ adrtrap:
 .else
 	.equ	EE,0x0000
 .endif
-	mov.d	w0,[w15++]	;void adrtrap(uint16_t* sp) {
+	clr	[w15++]		;void adrtrap(uint16_t* sp) {
+	mov.d	w0,[w15++]	; *sp++;
 	mov.d	w2,[w15++]	; *sp++ = w0, *sp++ = w1;
 	btss	0x0080,#3	; *sp++ = w2, *sp++ = w3;
 	bra	adrdone		; if (INTCON1 & (1 << ADDRERR)) { // is adr trap
 
 	;; as there's no SFR reflecting the EA causing the fault,
 	;; will need to completely decode the instruction here :-(
-	mov	[w15-10],w3	;  uint32_t* w3w2 = (sp[-5] << 16) | sp[-6];
+	mov	[w15-14],w3	;  uint32_t* w3w2 = (sp[-7] << 16) | sp[-6];
 ;	and	#0x07f,w3	;  w3w2 &= 0x7fffff;
 	mov	[w15-12],w2	;
 	mov	#0x0032,w1	;  uint16_t* w1 = &TBLPAG;
-	mov	[w1],[w15++]	;  *sp++ = *w1; // stack TBLPAG to preserve
+	mov	[w1],w0		;
+	mov	w0,[w15-10]	;  sp[-5] = *w1; // stack TBLPAG to preserve
 	mov	w3,[w1]		;  *w1 = (w3w2 >> 16) & 0x7f; // user (not cfg)
 	tblrdh	[w2],w3		;  uint16_t w3 = *w3w2 >> 16; // opcode in w3
 	tblrdl	[w2],w2		;  uint16_t w2 = *w3w2 & 0x00ffff;; // arg in w2
@@ -502,20 +504,21 @@ writebc:
 	mov.b	w0,[w15-13]	;   sp[-7] = (sp[-7] & 0xff00) | (SR & 0x00ff);
 	exch	w0,w3		;
 	rcall	writebk		;   writebk(&w0, w1);
-	bra	advanpc		;  }
+;	bra	advanpc		;  }
 
 	;; advance the stacked PC by one instruction (e.g. if not a branch/skip)
 advanpc:
 	rcall	nextins		;  advanpc: nextins();
 .ifdef SD_CACHE_WRITEBACK
 .endif
-	mov	#0x0032,w1	;  w1 = &TBLPAG;
-	mov	[--w15],[w1]	;  *w1 = *--w15; // TBLPAG restored
 	;; clear the fault bit before returning to prevent a bounceback
 adrdone:
-	mov.d	[--w15],w2	; }
-	mov.d	[--w15],w0	; w3 = *--sp, w2 = *--sp;
-	bclr	0x0080,#3	; w1 = *--sp, w0 = *--sp;
+	mov	[w15-10],w0	;  TBLPAG = sp[-5];  // TBLPAG restored
+	mov	wreg,0x032	; }
+	mov.d	[--w15],w2	; w3 = *--sp, w2 = *--sp;
+	mov.d	[--w15],w0	; w1 = *--sp, w0 = *--sp;
+	clr	[--w15]		;
+	bclr	0x0080,#3	;
 	retfie			; return INTCON1 &= ~(1 << ADDRERR);
 	;; actual exit is above; code below is reached with a goto from switch
 dobset:
