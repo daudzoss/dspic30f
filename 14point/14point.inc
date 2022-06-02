@@ -30,19 +30,23 @@
 .equ	SIGNB,15
 .equ	FORMATB,14
 	
+;;; w: input register int16_t in the format sfxx xxxx xxxx xxxx
+;;; c: output flag 0 if s=f, 1 if s!=f (the definition of ratio representation)
 .macro	isratio	w
 	btst.c	\w,#SIGNB	; c = (w < 0); // 1 if a ratio
 	btsc	\w,#FORMATB	; if (w & (1<<FORMATB))
 	btg	SR,#C		;  c = ~c;
 .endm
 
+;;; num: input literal or register int8_t, -128 < num < +128
+;;; rat: output register ratio_t in the format sf00 0000 0nnn nnnn
 .macro	toratio num,rat
 	mov	\num,\rat	; rat = num;
 ;	ior	\rat,\rat,\rat	;
 ;	bra	z,.+13		; if (rat) { // 0 can't be represented as ratio
 	btsc	\rat,#SIGNB	;  if (rat < 0)
 	neg.b	\rat,\rat	;   rat = (0xff00 & rat) | (0x00ff & -rat);
-	bra	z,.+10		;  if (rat) { // 0 can't be represented as ratio
+	bra	z,.+11		;  if (rat) { // 0 can't be represented as ratio
 	dec.b	\rat,\rat	;   rat--; // map 1..128 onto 0..127
 	and.b	#0x7f,\rat	;   rat &= 0x807f; // clear denominator (i.e. 1)
 	btg	\rat,#FORMATB	;   rat |= (rat & 0x8000) >> 1; // flag as ratio
@@ -50,41 +54,70 @@
 	bclr	\rat,#FORMATB-2	;
 	bclr	\rat,#FORMATB-3	;
 	bclr	\rat,#FORMATB-4	;
-	bclr	\rat,#FORMATB-5	;  } 
-	bclr	\rat,#FORMATB-6	; }
+	bclr	\rat,#FORMATB-5	;
+	bclr	\rat,#FORMATB-6	;  }
+;	bclr	\rat,#FORMATB-7	; }
 .endm
 
+;;; rat: input register ratio_t in the format sfdd dddd dnnn nnnn
+;;; numden: output register struct { uint7_t /*upper*/ den, /*lower*/ num; }
+.macro	spl_rat	rat,numden
+	mov	#0x3dff,\numden	;
+	and \numden,\rat,\numden;
+	sl	\numden,\numden	;
+	lsr.b	\numden,\numden	; numden = (0x7f00 & (rat<<1)) | (0x007f & rat);
+.endm
+
+;;; numden: input register struct { uint7_t /*upper*/ den, /*lower*/ num; }
+;;; packed: output register ratio_t in the unsigned format 00dd dddd dnnn nnnn
+.macro	uns_rat	numden,packed
+	sl.b	\numden,\packed	;
+	lsr	\packed,\packed	; packed = ((0x7f00&numden)>>1)|(0x007f&numden);
+.endm
+	
+.macro	combine	numden,sf
+	lsr	\sf,#14,\sf	; sf = ((0x7f00 & sf) >> 1) | (0x007f & sf);
+	sl	\sf,#14,\sf	; sf &= 0xc000;
+	ior	\numden,\sf,\sf	; sf |= sf;
+.endm
+
+;;; rat: input/output register ratio_t in the format sfdd dddd dnnn nnnn
+;;; tmp: scratch register(s)
+;;; extent: input constant, 0=minimal/quick, 1=more thorough, 2=final(division!)
 .macro	reratio	rat,tmp,extent
 	;; check for trailing zeroes (both N-1 and D-1 odd)
-	mov	#0x0081,\tmp	;
-	and	\tmp,\rat,\tmp	;
-	cmp	\tmp,#0x0081	;
-	bra	ne,.+12		;
-;;; 	add	\tmp,\rat,\rat	;
-;;; 	btsc	\rat,#7		;//overflow
+	spl_rat	\rat,\tmp
+	add	#0x101,\tmp	; tmp = 0x0101 + (0x7f00&(rat<<1))|(0x007f&rat);
 	
-	lsr	\rat,#6,\tmp	;
-	and.b	#0xfc,\tmp	;
-	rrnc.b	\tmp,\tmp	;
-	lsl	\tmp,#6,\tmp	;
+	btsc	\tmp,#8		; // sign got lost, will need to restore at end!
+	bra	nz,.+5		;
+	btsc	\tmp,#0		;
+	bra	nz,.+3		; while (tmp & 0x0101 == 0) {
+	lsr	\tmp,\tmp	;  tmp >>= 1; // both num and den divided by two
+	bra	.-5		; }
+
+	sub	#0x101,\tmp	; tmp -= 0x0101; combine(tmp, &rat);
+	uns_rat	\tmp,\tmp
+	combine	\tmp,\rat
 	
-	and.b	#0x7e,\rat	;
-	rrnc.b	\rat,\rat	;
-	btsc	\tmp,#7		;
-	bset	\rat,#7		;
-	
-	mov.b	\rat,\tmp	;
-	mov	\tmp,\rat	;
-	bra	.-14		;
 .if (\extent > 0)
-	;; check for powers of two?
+	;; check for easy odd factors? 3?
 .endif
 
 .if (\extent > 1)
 	;; full search for common factors
+	spl_rat	\rat,\tmp
+	add	#0x101,\tmp	;
+	factor \tmp,1+\tmp,2+\tmp
+	sub	#0x101,\tmp	;
+	uns_rat	\tmp,\tmp
+	combine	\tmp,\rat
 .endif
 .endm
 
+;;; rat: input ratio_t
+;;; int8: output int8_t
+;;; restore: input constant, 0 , 1 leave with rat unmodified
 .macro	tointif	rat,int8,restore
 	mov	\rat,\int8	;
 .if restore
