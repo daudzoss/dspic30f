@@ -54,25 +54,50 @@
 	bclr	\rat,#FORMATB-6	; }
 .endm
 
-.macro	reratio	rat,tmp
-	;; check for trailing zeroes
+.macro	reratio	rat,tmp,extent
+	;; check for trailing zeroes (both N-1 and D-1 odd)
+	mov	#0x0081,\tmp	;
+	and	\tmp,\rat,\tmp	;
+	cmp	\tmp,#0x0081	;
+	bra	ne,.+12		;
+;;; 	add	\tmp,\rat,\rat	;
+;;; 	btsc	\rat,#7		;//overflow
 	
+	lsr	\rat,#6,\tmp	;
+	and.b	#0xfc,\tmp	;
+	rrnc.b	\tmp,\tmp	;
+	lsl	\tmp,#6,\tmp	;
+	
+	and.b	#0x7e,\rat	;
+	rrnc.b	\rat,\rat	;
+	btsc	\tmp,#7		;
+	bset	\rat,#7		;
+	
+	mov.b	\rat,\tmp	;
+	mov	\tmp,\rat	;
+	bra	.-14		;
+.if (\extent > 0)
 	;; check for powers of two?
+.endif
+
+.if (\extent > 1)
+	;; full search for common factors
+.endif
 .endm
 
 .macro	tointif	rat,int8,restore
 	mov	\rat,\int8	;
 .if restore
 	isratio	\int8		;
-	bra	NC,.+16		;
+	bra	NC,.+17		;
 .endif
-	sl	\int8,\int8	; works with f or reg or lit, sign stored in C
-	swap	\int8		; 7-bit numerator and low bit 0 now in high byte
-	and.b	#0x7f,\int8	; FMT bit and 7-bit denominator now in low byte
-	swap	\int8		; 7-bit numerator and low bit 0 now in low byte
-	rrnc	\int8,\int8	; 7-bit numerator now in low 7 bits
+	sl	\int8,\int8	; // works with f or reg or lit, store sign in C
+	swap	\int8		; // 7-bit numerator and bit 0 now in high byte
+	and.b	#0x7f,\int8	; // FORMAT bit and 7-bit denom now in low byte
+	swap	\int8		; // 7-bit numerator and bit 0 now in low byte
+	rrnc	\int8,\int8	; // 7-bit numerator now in low 7 bits
 .if restore
-	bra	z,.+6		; leaves it a ratio if denominator isn't unity
+	bra	z,.+6		; // leaves as ratio if denominator isn't unity
 	btsc	SR,#C		; if (c)
 	bset	\int8,#SIGNB	;  int8 |= 1<<SIGNB; // negative (format left 0)
 	btss	SR,#C		; else
@@ -82,17 +107,17 @@
 	bra	nz,.+6		; if (rat & 0x3f80 == 0) // denominator is one
 .endif
 	btss	SR,#C		;  if (rat & (1<<SIGNB))
-	neg	\int8,\int8	;   int8 = -(rat & 0x007f + 1);
+	neg	\int8,\int8	;   int8 = -(rat & 0x007f + 1);// carry is clear
 	btsc	SR,#C		;  else
-	dec2	\int8,\int8	;   int8 = rat & 0x007f + 1;
-	inc	\int8		; // carry should be clear
+	dec2	\int8,\int8	;   int8 = rat & 0x007f + 1; // carry is clear
+	inc	\int8		;
 .endm
 
 .macro	toanint	rat,int8
 	tointif	\rat,\int8,0
 .endm
 
-.macro	incrat	rat,tmp	
+.macro	inc_rat	rat,tmp	
 	lsr	\rat,#6,\tmp	;
 	and.b	#0xfe,\tmp	;
 	inc2	\tmp,\tmp	; tmp = ((0x007f & (rat >> 7)) + 1) << 1; // D*2
@@ -103,8 +128,18 @@
 	dec	\tmp,\tmp	;  tmp = (tmp >> 1)  - 1; // cf. 0x007f&(rat>>7)
 	rrc	\tmp,\tmp	;  rat = (0xff00 & rat) | ((tmp&1) ? 0x0080 : 0)
 	rrc.b	\rat,\rat	;        (0x007f & (rat >> 1)); }
+	reratio	\rat,\tmp,0
 .endm
 
+.macro	inc_any	w,tmp
+	mov	\w,\tmp		; tmp = w;
+	inc	\w,\w		; w++;
+	isratio	\tmp
+	bra	nc,.+?		; if (isratio(tmp))
+	mov	\tmp,\w		;  { w = tmp; inc_rat(&w, &tmp); }
+	inc_rat	\w,\t'
+.endm
+	
 .macro	addrat	rat,tmp
 	lsr	\rat,#7,\tmp	;
 	and	#0x7f,\tmp	;
@@ -116,10 +151,6 @@
 .macro	addlit	lit,
 .endm
 
-.macro	addifany
-	
-.endm
-	
 .macro	subifany
 .endm
 .macro	mulifany
