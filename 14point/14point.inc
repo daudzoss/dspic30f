@@ -115,9 +115,9 @@
 .endif
 .endm
 
-;;; rat: input ratio_t
-;;; int8: output int8_t
-;;; restore: input constant, 0 , 1 leave with rat unmodified
+;;; rat: input union { ratio_t rat; int16_t integer }
+;;; int8: output int16_t
+;;; restore: input constant, 1 leave with unconvertible rat unmodified
 .macro	tointif	rat,int8,restore
 	mov	\rat,\int8	;
 .if restore
@@ -150,18 +150,70 @@
 	tointif	\rat,\int8,0
 .endm
 
-.macro	inc_rat	rat,tmp	
-	lsr	\rat,#6,\tmp	;
-	and.b	#0xfe,\tmp	;
-	inc2	\tmp,\tmp	; tmp = ((0x007f & (rat >> 7)) + 1) << 1; // D*2
-	sl.b	\rat,\rat	; rat = (0xff00 & rat) | ((0x007f & rat) << 1);
-	add.b	\tmp,\rat	; uint9_t c = (0x00fe & rat) + tmp;
-	bra	c,.+4		; rat = (0xff00 & rat) | (0x00fe & c);
-	lsr	\tmp,\tmp	; if (c < 0x100) { // C 0 if no overflow, else 1
-	dec	\tmp,\tmp	;  tmp = (tmp >> 1)  - 1; // cf. 0x007f&(rat>>7)
-	rrc	\tmp,\tmp	;  rat = (0xff00 & rat) | ((tmp&1) ? 0x0080 : 0)
-	rrc.b	\rat,\rat	;        (0x007f & (rat >> 1)); }
+.macro	bump_i	den,num,i
+.if (\i>0)
+	btsc	\den,#9		; if ((i>0) && (den & 0x0200 != 0) // inc a neg
+.else
+	btss	\den,#9		;   ||(i<0) && (den & 0x0200 == 0)) // dec a pos
+.endif
+	sub.b	\num,\den,\num	;  num -= den; // make numerator smaller
+.if (\i>0)
+	btss	\den,#9		; else // zero (shouldn't happen) or
+.else
+	btsc	\den,#9		;      // dec a neg or inc a pos
+.endif
+	add.b	\num,\den,\num	;  num += den; // make numerator larger
+.endm
+	
+;;; need to detect a zero that's unrepresentable in ratio format
+.macro	bumprat	rat,tmp,i
+	spl_rat	\rat,\tmp
+	sl	\tmp,\tmp	; tmp = (0xfe00 & (rat<<2))|(0x00fe & (rat<<1));
+	add	#0x202,\tmp	; tmp += 0x202; // convert 0..127 to 1...128
+	lsr	\rat,#6,\rat	; rat >>= 6; // signs in high, denom<<1 in low
+	and.b	#0xfe,\rat	; rat &= 0xfffe; // denominator to add/subtract
+
+	bump_1	\rat,\tmp,\i
+.if (\i & 1 == 0)
+	bump_1	\rat,\tmp,\i
+.endif
+
+	bra	nz,.+?		; for (j=(i<0)?-i:i; j; j--) bump_1(rat,tmp,i);
+	mov	#0x0002,\rat	; if (tmp & 0xfe == 0)
+	mov	#0x0002,\tmp	;  rat = tmp = 0x0002; // spoof to get 0x0000 
+	bra	nv, .+?		; // else if (/*overflow condition*/) {}
+
+	sub	#0x2,\rat	;
+	sub	#0x2,\tmp	;
+	sl	\rat,#6,\rat	;
+	rlc	\rat,\rat	;
+	mov.b	\tmp,\rat	;
+	rrc	\rat,\rat	;
 	reratio	\rat,\tmp,0
+.endm	
+
+.macro 	inc_any	rat,tmp,i
+	isratio	\rat
+	bra	c,?
+.if (\i == -2)
+	dec2	\rat,\rat
+.endif
+.if (\i == -1)
+	dec	\rat,\rat
+.endif
+.if (\i == 1)
+	inc	\rat,\rat
+.endif
+.if (\i == 2)
+	inc2	\rat,\rat
+.endif
+	inc	\rat
+	bra	?
+	bumprat	\rat,\tmp,\i
+.endm
+	
+.macro 	dec_any	rat,tmp	
+	bumprat	\rat,\tmp,0
 .endm
 
 .macro	inc_any	w,tmp
