@@ -150,19 +150,22 @@
 	tointif	\rat,\int8,0
 .endm
 
-.macro	bump_i	den,num,i
+;;; del: input uint8_t delta to apply to...
+;;; tot: input/output uint8_t running total according to...
+;;; i: literal int1_t increment dir, -del or +del regardless of actual magnitude
+.macro	bump_i	del,tot,i
 .if (\i>0)
-	btsc	\den,#9		; if ((i>0) && (den & 0x0200 != 0) // inc a neg
+	btsc	\del,#9		; if ((i>0) && (del & 0x0200 != 0) // inc a neg
 .else
-	btss	\den,#9		;   ||(i<0) && (den & 0x0200 == 0)) // dec a pos
+	btss	\del,#9		;   ||(i<0) && (del & 0x0200 == 0)) // dec a pos
 .endif
-	sub.b	\num,\den,\num	;  num -= den; // make numerator smaller
+	sub.b	\tot,\del,\tot	;  tot -= del; // make total lower
 .if (\i>0)
-	btss	\den,#9		; else // zero (shouldn't happen) or
+	btss	\del,#9		; else // zero (shouldn't happen) or
 .else
-	btsc	\den,#9		;      // dec a neg or inc a pos
+	btsc	\del,#9		;      // dec a neg or inc a pos
 .endif
-	add.b	\num,\den,\num	;  num += den; // make numerator larger
+	add.b	\tot,\del,\tot	;  tot += del; // make total higher
 .endm
 	
 ;;; need to detect a zero that's unrepresentable in ratio format
@@ -189,6 +192,9 @@
 	rlc	\rat,\rat	;
 	mov.b	\tmp,\rat	;
 	rrc	\rat,\rat	;
+	
+;;; can we restore rat? please?
+
 	reratio	\rat,\tmp,0
 .endm	
 
