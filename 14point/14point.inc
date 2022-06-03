@@ -168,13 +168,13 @@
 	add.b	\tot,\del,\tot	;  tot += del; // make total higher
 .endm
 	
-;;; need to detect a zero that's unrepresentable in ratio format
 .macro	bumprat	rat,tmp,i
-	sl	\rat,#1,\tmp	; uint8_t tmp = rat << 1; // numerator*2 byte
-	add.b	#0x02,\tmp	; tmp += 2; // convert 0..127 to 1...128
+.if (\i)
+	sl	\rat,\tmp	; uint8_t tmp = rat << 1; // numerator*2 in low
+	add.b	#0x02,\tmp	; tmp += 2; // convert 2*0..127 to 2*1...128
 	lsr	\rat,#6,\rat	; rat >>= 6; // signs in high, denom*2 in low
 	and.b	#0xfe,\rat	; rat &= 0xfffe; // denominator to add/subtract
-	add.b	#0x02,\rat	; rat += 2; // convert 0..127 to 1...128
+	add.b	#0x02,\rat	; rat += 2; // convert 2*0..127 to 2*1...128
 
 	bump_1	\rat,\tmp,\i
 .if (\i & 1 == 0)
@@ -186,44 +186,34 @@
 ;	bra	nv,.+?		; // else if (/*overflow condition*/) {}
 
 	sub.b	#0x02,\rat	; // rat still holds sign, format, denominator:
-	sub.b	#0x02,\tmp	; //  0000 00sf dddd ddd0
+	sub.b	#0x02,\tmp	; //  0000 00sf dddd ddd0 -> sfdd dddd d000 0000
 	sl	\rat,#6,\rat	; // tmp holds new numerator:
 	lsr.b	\tmp,\tmp	; //  fddd dddd nnnn nnn0
 	ior.b	\tmp,\rat,\rat	; rat = (rat << 6) | (0x007f & (tmp >> 1));
-	
+.endif	
 	reratio	\rat,\tmp,0
 .endm	
 
 .macro 	inc_any	rat,tmp,i
 	isratio	\rat
-	bra	c,?
+	bra	c,.+3		; if (!isratio) switch (i) {
 .if (\i == -2)
-	dec2	\rat,\rat
+	dec2	\rat,\rat	;  case -2: rat -= 2;
 .endif
 .if (\i == -1)
-	dec	\rat,\rat
+	dec	\rat,\rat	;  case -1: rat--;
 .endif
 .if (\i == 1)
-	inc	\rat,\rat
+	inc	\rat,\rat	;  case +1: rat++;
 .endif
 .if (\i == 2)
-	inc2	\rat,\rat
+	inc2	\rat,\rat	;  case +2: rat += 2;
 .endif
-	bra	?
+.if (\i == 0)
+	nop			;  default: ;
+.endif
+	bra	?		; } else {}
 	bumprat	\rat,\tmp,\i
-.endm
-	
-.macro 	dec_any	rat,tmp	
-	bumprat	\rat,\tmp,0
-.endm
-
-.macro	inc_any	w,tmp
-	mov	\w,\tmp		; tmp = w;
-	inc	\w,\w		; w++;
-	isratio	\tmp
-	bra	nc,.+?		; if (isratio(tmp))
-	mov	\tmp,\w		;  { w = tmp; inc_rat(&w, &tmp); }
-	inc_rat	\w,\t'
 .endm
 	
 .macro	addrat	rat,tmp
@@ -234,13 +224,4 @@
 .endm
 	
 
-.macro	addlit	lit,
-.endm
-
-.macro	subifany
-.endm
-.macro	mulifany
-.endm
-.macro	divifany
-	
 .endm
