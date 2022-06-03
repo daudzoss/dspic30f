@@ -76,9 +76,9 @@
 .endm
 	
 .macro	combine	numden,sf
-	lsr	\sf,#14,\sf	; sf = ((0x7f00 & sf) >> 1) | (0x007f & sf);
+	lsr	\sf,#14,\sf	;
 	sl	\sf,#14,\sf	; sf &= 0xc000;
-	ior	\numden,\sf,\sf	; sf |= sf;
+	ior	\numden,\sf,\sf	; sf |= numden;
 .endm
 
 ;;; rat: input/output register ratio_t in the format sfdd dddd dnnn nnnn
@@ -90,9 +90,9 @@
 	add	#0x101,\tmp	; tmp = 0x0101 + (0x7f00&(rat<<1))|(0x007f&rat);
 	
 	btsc	\tmp,#8		; // sign got lost, will need to restore at end!
-	bra	nz,.+5		;
+	bra	.+5		;
 	btsc	\tmp,#0		;
-	bra	nz,.+3		; while (tmp & 0x0101 == 0) {
+	bra	.+3		; while (tmp & 0x0101 == 0) {
 	lsr	\tmp,\tmp	;  tmp >>= 1; // both num and den divided by two
 	bra	.-5		; }
 
@@ -150,7 +150,7 @@
 	tointif	\rat,\int8,0
 .endm
 
-;;; del: input uint8_t delta to apply to...
+;;; del: input uint10_t delta to apply to (0 < delta < 254, sign in bit 9)...
 ;;; tot: input/output uint8_t running total according to...
 ;;; i: literal int1_t increment dir, -del or +del regardless of actual magnitude
 .macro	bump_i	del,tot,i
@@ -161,40 +161,36 @@
 .endif
 	sub.b	\tot,\del,\tot	;  tot -= del; // make total lower
 .if (\i>0)
-	btss	\del,#9		; else // zero (shouldn't happen) or
+	btss	\del,#9		; else // inc a pos
 .else
-	btsc	\del,#9		;      // dec a neg or inc a pos
+	btsc	\del,#9		;      // or dec a neg
 .endif
 	add.b	\tot,\del,\tot	;  tot += del; // make total higher
 .endm
 	
 ;;; need to detect a zero that's unrepresentable in ratio format
 .macro	bumprat	rat,tmp,i
-	spl_rat	\rat,\tmp
-	sl	\tmp,\tmp	; tmp = (0xfe00 & (rat<<2))|(0x00fe & (rat<<1));
-	add	#0x202,\tmp	; tmp += 0x202; // convert 0..127 to 1...128
-	lsr	\rat,#6,\rat	; rat >>= 6; // signs in high, denom<<1 in low
+	sl	\rat,#1,\tmp	; uint8_t tmp = rat << 1; // numerator*2 byte
+	add.b	#0x02,\tmp	; tmp += 2; // convert 0..127 to 1...128
+	lsr	\rat,#6,\rat	; rat >>= 6; // signs in high, denom*2 in low
 	and.b	#0xfe,\rat	; rat &= 0xfffe; // denominator to add/subtract
+	add.b	#0x02,\rat	; rat += 2; // convert 0..127 to 1...128
 
 	bump_1	\rat,\tmp,\i
 .if (\i & 1 == 0)
 	bump_1	\rat,\tmp,\i
 .endif
-
-	bra	nz,.+?		; for (j=(i<0)?-i:i; j; j--) bump_1(rat,tmp,i);
+	bra	nz,.+3		; for (j=(i<0)?-i:i; j; j--) bump_1(rat,tmp,i);
 	mov	#0x0002,\rat	; if (tmp & 0xfe == 0)
-	mov	#0x0002,\tmp	;  rat = tmp = 0x0002; // spoof to get 0x0000 
-	bra	nv, .+?		; // else if (/*overflow condition*/) {}
+	mov.b	#0x02,\tmp	;  rat = tmp = 0x0002; // spoof to get 0x0000 
+;	bra	nv,.+?		; // else if (/*overflow condition*/) {}
 
-	sub	#0x2,\rat	;
-	sub	#0x2,\tmp	;
-	sl	\rat,#6,\rat	;
-	rlc	\rat,\rat	;
-	mov.b	\tmp,\rat	;
-	rrc	\rat,\rat	;
+	sub.b	#0x02,\rat	; // rat still holds sign, format, denominator:
+	sub.b	#0x02,\tmp	; //  0000 00sf dddd ddd0
+	sl	\rat,#6,\rat	; // tmp holds new numerator:
+	lsr.b	\tmp,\tmp	; //  fddd dddd nnnn nnn0
+	ior.b	\tmp,\rat,\rat	; rat = (rat << 6) | (0x007f & (tmp >> 1));
 	
-;;; can we restore rat? please?
-
 	reratio	\rat,\tmp,0
 .endm	
 
@@ -213,7 +209,6 @@
 .if (\i == 2)
 	inc2	\rat,\rat
 .endif
-	inc	\rat
 	bra	?
 	bumprat	\rat,\tmp,\i
 .endm
