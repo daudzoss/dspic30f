@@ -237,7 +237,7 @@
 	bra	end\@mul_r_n	;  else {
 	
 	mul.ss	\dst2,\by,\dst2	;   dst2 = dst2[0] /*numerator*/ * by;
-	fmt_den	1+\dst2,\rat	;
+	fmt_den	1+\dst2,\rat
 	btsc	\rat,#SIGNB	;   if (dst2 < 0)
 	neg	\dst2,\dst2	;    dst2 = 0x8000 | (0x3f8&rat) | (0x7f&-dst2);
 	fmt_den	1+\dst2,\rat
@@ -268,7 +268,7 @@ end\@oneover:
 
 .macro 	inc_any	rat,tmp,i
 	isratio	\rat
-	bra	c,.+3		; if (!isratio) switch (i) {
+	bra	c,end\@inc_any	; if (!isratio) switch (i) {
 .if (\i == -2)
 	dec2	\rat,\rat	;  case -2: rat -= 2;
 .endif
@@ -289,7 +289,28 @@ end\@oneover:
 end\@inc_any:
 .endm
 	
-.macro	addrat	rat,tmp
+.macro	add_r_n	rat,offs,dst2
+	isratio	\rat
+	bra	c,.+3		; if (!isratio(rat))
+	add	\rat,\offs,\dst2;  dst2 = rat + by;
+	bra	end\@add_r_n	; else {
+	
+	sgn_rat	\rat,\dst2,1+\dst2
+	cp	#1,1+\dst2	;  sgn_rat(rat, &dst2);
+	bra	ne,.+?		;  if (dst2[1] /*denominator*/ == 1) {
+	btss	\offs,#SIGNB	;   if (dst2[0] /*numerator*/ >= 0)
+	add    \dst2,\offs,\dst2;    dst2 = dst2[0] /*numerator*/ + offs;
+	btsc	\offs,#SIGNB	;   else
+	sub    \dst2,\offs,\dst2;    dst2 = dst2[0] /*numerator*/ - offs;
+	bra	end\@add_r_n	;  } else {
+
+	mul.ss 1+\dst2,\offs,\dst2;
+	fmt_den	1+\dst2,\rat
+
+
+
+
+	
 	lsr	\rat,#7,\tmp	;
 	and	#0x7f,\tmp	;
 	inc	\tmp,\tmp	;
