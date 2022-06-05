@@ -194,6 +194,78 @@
 	reratio	\rat,\tmp,0
 .endm	
 
+.macro	mulnord	int9,fac,tmp2
+	
+.endm	
+
+;;; sign: any register int16_t indicating the sign (to multiply the numerator)n
+;;; num: input/output 0ddd dddd 0nnn nnnn (before adding 1)->ssss ssss nnnn nnnn
+;;; den: output uint16_t denominator 0000 0000 dddd dddd (after adding 1)
+.macro	sgn_rat	sign,num,den
+	spl_rat	\sign,\num
+	add	#0x101,\num	;
+	lsr	\num,#8,\den	;
+	and	#0xff,\num	;
+	btsc	\sign,#SIGNB	;
+	neg	\num,\num	;
+.endm
+
+;;; sign: input register int16_t sxxx xxxx xxxx xxxx
+;;; den: input/output register ratio_t xxdd dddd dxxx xxxx->sfdd dddd d000 0000
+.macro	fmt_den	sign,den
+	rlc	\sign,\sign	;
+	rlnc	\den,\den	;
+	rrc	\den,\den	;
+	btss	\den,#SIGNB	;
+	bset	\den,#FORMATB	;
+	btsc	\den,#SIGNB	;
+	bclr	\den,#FORMATB	;
+	lsr	\den,#7,\den	;
+	sl	\den,#7,\den	;
+.endm
+	
+.macro	mul_r_n	rat,by,dst2
+	isratio	\rat
+	bra	c,.+3		; if (!isratio(rat))
+	mul.ss	\rat,\by,\dst2	;  dst2 = rat * by;
+	bra	end\@mul_r_n	; else {
+	
+	sgn_rat	\rat,\dst2,1+\dst2
+	cp	#1,1+\dst2	;  sgn_rat(rat, &dst2);
+	bra	ne,.+3		;  if (dst2[1] /*denominator*/ == 1)
+	mul.ss	\dst2,\by,\dst2	;   dst2 = dst2[0] /*numerator*/ * by;
+	bra	end\@mul_r_n	;  else {
+	
+	mul.ss	\dst2,\by,\dst2	;   dst2 = dst2[0] /*numerator*/ * by;
+	fmt_den	1+\dst2,\rat	;
+	btsc	\rat,#SIGNB	;   if (dst2 < 0)
+	neg	\dst2,\dst2	;    dst2 = 0x8000 | (0x3f8&rat) | (0x7f&-dst2);
+	fmt_den	1+\dst2,\rat
+	ior	\rat,\dst2,\dst2;   else dst2 = 0x4000 |(0x3f8&rat)|(0x7f&dst2);
+	reratio	\dst2,1+\dst2,0
+end\@mul_r_n:
+.endm
+
+.macro	mul_any	rat,by,dst4
+.endm
+
+.macro	oneover	rat,dst
+	isratio	\rat
+	bra	nc,end\@oneover	; if (isratio(rat))
+	spl_rat	\rat,\dst
+	swap	\dst		;
+	uns_rat	\dst,\dst	;
+	btsc	\rat,#SIGNB	;
+	bset	\rat,#SIGNB	;  dst = (0xc000 & rat) |
+	btsc	\rat,#FORMATB	;        (0x3f80 & (rat << 7)) |
+	bset	\rat,#FORMATb	;        (0x007f & (rat >> 7)); // swap num, den
+end\@oneover:
+.endm	
+
+.macro	div_any	rat,tmp2
+
+.endm
+
 .macro 	inc_any	rat,tmp,i
 	isratio	\rat
 	bra	c,.+3		; if (!isratio) switch (i) {
@@ -212,8 +284,9 @@
 .if (\i == 0)
 	nop			;  default: ;
 .endif
-	bra	?		; } else {}
+	bra	end\@inc_any	; } else {}
 	bumprat	\rat,\tmp,\i
+end\@inc_any:
 .endm
 	
 .macro	addrat	rat,tmp
@@ -221,7 +294,4 @@
 	and	#0x7f,\tmp	;
 	inc	\tmp,\tmp	;
 	mov	#0x
-.endm
-	
-
 .endm
