@@ -43,10 +43,10 @@
 .macro	toratio num,rat
 	mov	\num,\rat	; rat = num;
 ;	ior	\rat,\rat,\rat	;
-;	bra	z,.+13		; if (rat) { // 0 can't be represented as ratio
+;	bra	z,end\@toratio	; if (rat) { // 0 can't be represented as ratio
 	btsc	\rat,#SIGNB	;  if (rat < 0)
 	neg.b	\rat,\rat	;   rat = (0xff00 & rat) | (0x00ff & -rat);
-	bra	z,.+11		;  if (rat) { // 0 can't be represented as ratio
+	bra	z,end\@toratio	;  if (rat) { // 0 can't be represented as ratio
 	dec.b	\rat,\rat	;   rat--; // map 1..128 onto 0..127
 	and.b	#0x7f,\rat	;   rat &= 0x807f; // clear denominator (i.e. 1)
 	btg	\rat,#FORMATB	;   rat |= (rat & 0x8000) >> 1; // flag as ratio
@@ -57,6 +57,7 @@
 	bclr	\rat,#FORMATB-5	;
 	bclr	\rat,#FORMATB-6	;  }
 ;	bclr	\rat,#FORMATB-7	; }
+end\@toratio:
 .endm
 
 ;;; rat: input register ratio_t in the format sfdd dddd dnnn nnnn
@@ -88,14 +89,14 @@
 	;; check for trailing zeroes (both N-1 and D-1 odd)
 	spl_rat	\rat,\tmp
 	add	#0x101,\tmp	; tmp = 0x0101 + (0x7f00&(rat<<1))|(0x007f&rat);
-	
+shr\@reratio:	
 	btsc	\tmp,#8		; // sign got lost, will need to restore at end!
-	bra	.+5		;
+	bra	not\@reratio	;
 	btsc	\tmp,#0		;
-	bra	.+3		; while (tmp & 0x0101 == 0) {
+	bra	not\@reratio	; while (tmp & 0x0101 == 0) {
 	lsr	\tmp,\tmp	;  tmp >>= 1; // both num and den divided by two
-	bra	.-5		; }
-
+	bra	shr\@reratio	; }
+not\@reratio:
 	sub	#0x101,\tmp	; tmp -= 0x0101; combine(tmp, &rat);
 	uns_rat	\tmp,\tmp
 	combine	\tmp,\rat
@@ -118,7 +119,7 @@
 	mov	\rat,\int8	;
 .if restore
 	isratio	\int8		;
-	bra	NC,.+17		;
+	bra	NC,end\@tointif	;
 .endif
 	sl	\int8,\int8	; // works with f or reg or lit, store sign in C
 	swap	\int8		; // 7-bit numerator and bit 0 now in high byte
@@ -126,20 +127,22 @@
 	swap	\int8		; // 7-bit numerator and bit 0 now in low byte
 	rrnc	\int8,\int8	; // 7-bit numerator now in low 7 bits
 .if restore
-	bra	z,.+6		; // leaves as ratio if denominator isn't unity
+	bra	z,den1\@tointif	; // leaves as ratio if denominator isn't unity
 	btsc	SR,#C		; if (c)
 	bset	\int8,#SIGNB	;  int8 |= 1<<SIGNB; // negative (format left 0)
 	btss	SR,#C		; else
 	bset	\int8,#FORMATB	;  int8 |= 1<<FORMATB; // positive (sign left 0)
-	bra	.+6		;
+	bra	end\@tointif	;
 .else
-	bra	nz,.+6		; if (rat & 0x3f80 == 0) // denominator is one
+	bra	nz,end\@tointif	; if (rat & 0x3f80 == 0) // denominator is one
 .endif
+den1\@tointif:
 	btss	SR,#C		;  if (rat & (1<<SIGNB))
 	neg	\int8,\int8	;   int8 = -(rat & 0x007f + 1);// carry is clear
 	btsc	SR,#C		;  else
 	dec2	\int8,\int8	;   int8 = rat & 0x007f + 1; // carry is clear
 	inc	\int8		;
+end\@tointif:
 .endm
 
 .macro	toanint	rat,int8
@@ -176,11 +179,11 @@
 .if (\i & 1 == 0)
 	bump_1	\rat,\tmp,\i
 .endif
-	bra	nz,.+3		; for (j=(i<0)?-i:i; j; j--) bump_1(rat,tmp,i);
+	bra	nz,no0\@bumprat	; for (j=(i<0)?-i:i; j; j--) bump_1(rat,tmp,i);
 	mov	#0x0002,\rat	; if (tmp & 0xfe == 0)
 	mov.b	#0x02,\tmp	;  rat = tmp = 0x0002; // spoof to get 0x0000 
 ;	bra	nv,.+?		; // else if (/*overflow condition*/) {}
-
+no0\@bumprat:	
 	sub.b	#0x02,\rat	; // rat still holds sign, format, denominator:
 	sub.b	#0x02,\tmp	; //  0000 00sf dddd ddd0 -> sfdd dddd d000 0000
 	sl	\rat,#6,\rat	; // tmp holds new numerator:
@@ -222,16 +225,16 @@
 	
 .macro	mul_r_n	rat,by,dst,dst1
 	isratio	\rat
-	bra	c,.+3		; if (!isratio(rat))
+	bra	c,is\@mul_r_n	; if (!isratio(rat))
 	mul.ss	\rat,\by,\dst	;  dst = rat * by;
 	bra	end\@mul_r_n	; else {
-	
+is\@mul_r_n:
 	sgn_rat	\rat,\dst,\dst1
 	cp	\dst1,#1	;  sgn_rat(rat, &dst);
-	bra	nz,.+3		;  if (dst[1] /*denominator*/ == 1)
+	bra	nz,no1\@mul_r_n	;  if (dst[1] /*denominator*/ == 1)
 	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
 	bra	end\@mul_r_n	;  else {
-	
+no1\@mul_r_n:	
 	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
 	btsc	\dst,#SIGNB	;   if (dst < 0)
 	neg	\dst,\dst	;    dst = 0x8000 | (0x3f8&rat) | (0x7f&-dst);
@@ -286,19 +289,19 @@ end\@inc_any:
 	
 .macro	add_r_n	rat,offs,dst,dst1
 	isratio	\rat
-	bra	c,.+3		; if (!isratio(rat))
+	bra	c,is\@add_r_n	; if (!isratio(rat))
 	add	\rat,\offs,\dst	;  dst = rat + by;
 	bra	end\@add_r_n	; else {
-	
+is\@add_r_n:	
 	sgn_rat	\rat,\dst,\dst1
 	cp	\dst1,#1	;  sgn_rat(rat, &dst);
-	bra	nz,.+6		;  if (dst[1] /*denominator*/ == 1) {
+	bra	nz,no1\@add_r_n	;  if (dst[1] /*denominator*/ == 1) {
 	btss	\dst,#SIGNB	;   if (dst[0] /*numerator*/ >= 0)
 	add	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ + offs;
 	btsc	\dst,#SIGNB	;   else
 	sub	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ - offs;
 	bra	end\@add_r_n	;  } else {
-
+no1\@add_r_n:
 	mul.ss	\dst1,\offs,\dst;
 	mov	\dst,\offs	;   offs *= dst[1] /*denominator*/;
 	sgn_rat	\rat,\dst,\dst1
