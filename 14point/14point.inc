@@ -82,9 +82,9 @@
 .endm
 
 ;;; rat: input/output register ratio_t in the format sfdd dddd dnnn nnnn
-;;; tmp: scratch register(s)
+;;; tmp,tmp1,tmp2: scratch register(s)
 ;;; extent: input constant, 0=minimal/quick, 1=more thorough, 2=final(division!)
-.macro	reratio	rat,tmp,extent
+.macro	reratio	rat,tmp,tmp1,tmp2,extent
 	;; check for trailing zeroes (both N-1 and D-1 odd)
 	spl_rat	\rat,\tmp
 	add	#0x101,\tmp	; tmp = 0x0101 + (0x7f00&(rat<<1))|(0x007f&rat);
@@ -100,19 +100,15 @@
 	uns_rat	\tmp,\tmp
 	combine	\tmp,\rat
 	
-.if (\extent > 0)
-	;; check for easy odd factors? 3?
-.endif
-
-.if (\extent > 1)
+;.if (\extent)
 	;; full search for common factors
-	spl_rat	\rat,\tmp
-	add	#0x101,\tmp	;
-	factor \tmp,1+\tmp,2+\tmp
-	sub	#0x101,\tmp	;
-	uns_rat	\tmp,\tmp
-	combine	\tmp,\rat
-.endif
+;	spl_rat	\rat,\tmp
+;	add	#0x101,\tmp	;
+;	factor \tmp,\tmp1,\tmp2
+;	sub	#0x101,\tmp
+;	uns_rat	\tmp,\tmp
+;	combine	\tmp,\rat
+;.endif
 .endm
 
 ;;; rat: input union { ratio_t rat; int16_t integer }
@@ -191,7 +187,7 @@
 	lsr.b	\tmp,\tmp	; //  fddd dddd nnnn nnn0
 	ior.b	\tmp,\rat,\rat	; rat = (rat << 6) | (0x007f & (tmp >> 1));
 .endif	
-	reratio	\rat,\tmp,0
+	reratio	\rat,\tmp
 .endm	
 
 .macro	mulnord	int9,fac,tmp2
@@ -224,25 +220,24 @@
 	sl	\den,#7,\den	;
 .endm
 	
-.macro	mul_r_n	rat,by,dst2
+.macro	mul_r_n	rat,by,dst,dst1
 	isratio	\rat
 	bra	c,.+3		; if (!isratio(rat))
-	mul.ss	\rat,\by,\dst2	;  dst2 = rat * by;
+	mul.ss	\rat,\by,\dst	;  dst = rat * by;
 	bra	end\@mul_r_n	; else {
 	
-	sgn_rat	\rat,\dst2,1+\dst2
-	cp	#1,1+\dst2	;  sgn_rat(rat, &dst2);
-	bra	ne,.+3		;  if (dst2[1] /*denominator*/ == 1)
-	mul.ss	\dst2,\by,\dst2	;   dst2 = dst2[0] /*numerator*/ * by;
+	sgn_rat	\rat,\dst,\dst1
+	cp	\dst1,#1	;  sgn_rat(rat, &dst);
+	bra	nz,.+3		;  if (dst[1] /*denominator*/ == 1)
+	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
 	bra	end\@mul_r_n	;  else {
 	
-	mul.ss	\dst2,\by,\dst2	;   dst2 = dst2[0] /*numerator*/ * by;
-	fmt_den	1+\dst2,\rat
-	btsc	\rat,#SIGNB	;   if (dst2 < 0)
-	neg	\dst2,\dst2	;    dst2 = 0x8000 | (0x3f8&rat) | (0x7f&-dst2);
-	fmt_den	1+\dst2,\rat
-	ior	\rat,\dst2,\dst2;   else dst2 = 0x4000 |(0x3f8&rat)|(0x7f&dst2);
-	reratio	\dst2,1+\dst2,0
+	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
+	btsc	\dst,#SIGNB	;   if (dst < 0)
+	neg	\dst,\dst	;    dst = 0x8000 | (0x3f8&rat) | (0x7f&-dst);
+	fmt_den	\dst1,\rat
+	ior	\rat,\dst,\dst	;   else dst = 0x4000 |(0x3f8&rat)|(0x7f&dst);
+	reratio	\dst,\dst1,0
 end\@mul_r_n:
 .endm
 
@@ -258,7 +253,7 @@ end\@mul_r_n:
 	btsc	\rat,#SIGNB	;
 	bset	\rat,#SIGNB	;  dst = (0xc000 & rat) |
 	btsc	\rat,#FORMATB	;        (0x3f80 & (rat << 7)) |
-	bset	\rat,#FORMATb	;        (0x007f & (rat >> 7)); // swap num, den
+	bset	\rat,#FORMATB	;        (0x007f & (rat >> 7)); // swap num, den
 end\@oneover:
 .endm	
 
@@ -289,30 +284,33 @@ end\@oneover:
 end\@inc_any:
 .endm
 	
-.macro	add_r_n	rat,offs,dst2
+.macro	add_r_n	rat,offs,dst,dst1
 	isratio	\rat
 	bra	c,.+3		; if (!isratio(rat))
-	add	\rat,\offs,\dst2;  dst2 = rat + by;
+	add	\rat,\offs,\dst	;  dst = rat + by;
 	bra	end\@add_r_n	; else {
 	
-	sgn_rat	\rat,\dst2,1+\dst2
-	cp	#1,1+\dst2	;  sgn_rat(rat, &dst2);
-	bra	ne,.+?		;  if (dst2[1] /*denominator*/ == 1) {
-	btss	\offs,#SIGNB	;   if (dst2[0] /*numerator*/ >= 0)
-	add    \dst2,\offs,\dst2;    dst2 = dst2[0] /*numerator*/ + offs;
-	btsc	\offs,#SIGNB	;   else
-	sub    \dst2,\offs,\dst2;    dst2 = dst2[0] /*numerator*/ - offs;
+	sgn_rat	\rat,\dst,\dst1
+	cp	\dst1,#1	;  sgn_rat(rat, &dst);
+	bra	nz,.+6		;  if (dst[1] /*denominator*/ == 1) {
+	btss	\dst,#SIGNB	;   if (dst[0] /*numerator*/ >= 0)
+	add	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ + offs;
+	btsc	\dst,#SIGNB	;   else
+	sub	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ - offs;
 	bra	end\@add_r_n	;  } else {
 
-	mul.ss 1+\dst2,\offs,\dst2;
-	fmt_den	1+\dst2,\rat
-
-
-
-
+	mul.ss	\dst1,\offs,\dst;
+	mov	\dst,\offs	;   offs *= dst[1] /*denominator*/;
+	sgn_rat	\rat,\dst,\dst1
+	btss	\dst,#SIGNB	;   if (dst[0] /*numerator*/ >= 0)
+	add	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ + offs;
+	btsc	\dst,#SIGNB	;   else
+	sub	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ - offs;
 	
-	lsr	\rat,#7,\tmp	;
-	and	#0x7f,\tmp	;
-	inc	\tmp,\tmp	;
-	mov	#0x
+	btsc	\dst,#SIGNB	;   if (dst < 0)
+	neg	\dst,\dst	;    dst = 0x8000 | (0x3f8&rat) | (0x7f&-dst);
+	fmt_den	\dst,\rat
+	ior	\rat,\dst,\dst	;   else dst = 0x4000 |(0x3f8&rat)|(0x7f&dst);
+	reratio	\dst,\dst1
+end\@add_r_n:
 .endm
