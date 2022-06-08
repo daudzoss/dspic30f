@@ -1,7 +1,7 @@
 .include "14point.inc"
-;.include "/opt/microchip/xc16/v1.70/src/pic30/crt1_standard.s"
 	
 	.text
+	.org	0x000100
 _main:	toratio	#7,w0
 	oneover	w0,w1
 	mov	#3,w0		; w2 = (w1 = oneover(toratio(7))) + 3; // 22/7
