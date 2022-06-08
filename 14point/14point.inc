@@ -254,9 +254,9 @@ end\@mul_r_n:
 	swap	\dst		;
 	uns_rat	\dst,\dst	;
 	btsc	\rat,#SIGNB	;
-	bset	\rat,#SIGNB	;  dst = (0xc000 & rat) |
+	bset	\dst,#SIGNB	;  dst = (0xc000 & rat) |
 	btsc	\rat,#FORMATB	;        (0x3f80 & (rat << 7)) |
-	bset	\rat,#FORMATB	;        (0x007f & (rat >> 7)); // swap num, den
+	bset	\dst,#FORMATB	;        (0x007f & (rat >> 7)); // swap num, den
 end\@oneover:
 .endm	
 
