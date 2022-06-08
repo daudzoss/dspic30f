@@ -64,7 +64,7 @@ Lend\@toratio:
 ;;; rat: input register ratio_t in the format sfdd dddd dnnn nnnn
 ;;; numden: output register struct { uint7_t /*upper*/ den, /*lower*/ num; }
 .macro	spl_rat	rat,numden
-	mov	#0x3dff,\numden	;
+	mov	#0x3fff,\numden	;
 	and \numden,\rat,\numden;
 	sl	\numden,\numden	;
 	lsr.b	\numden,\numden	; numden = (0x7f00 & (rat<<1)) | (0x007f & rat);
@@ -198,8 +198,8 @@ Lno0\@bumprat:
 	
 .endm	
 
-;;; sign: any register int16_t indicating the sign (to multiply the numerator)n
-;;; num: input/output 0ddd dddd 0nnn nnnn (before adding 1)->ssss ssss nnnn nnnn
+;;; sign: input any ratio_t sfdd dddd dnnn nnnn
+;;; num: output int16_t numerator ssss ssss nnnn nnnn
 ;;; den: output uint16_t denominator 0000 0000 dddd dddd (after adding 1)
 .macro	sgn_rat	sign,num,den
 	spl_rat	\sign,\num
@@ -213,8 +213,8 @@ Lno0\@bumprat:
 ;;; sign: input register int16_t sxxx xxxx xxxx xxxx
 ;;; den: input/output register ratio_t xxdd dddd dxxx xxxx->sfdd dddd d000 0000
 .macro	fmt_den	sign,den
-	rlc	\sign,\sign	;
 	rlnc	\den,\den	;
+	btst.c	\sign,#SIGNB	;
 	rrc	\den,\den	;
 	btss	\den,#SIGNB	;
 	bset	\den,#FORMATB	;
@@ -295,7 +295,7 @@ Lend\@inc_any:
 	bra	Lend\@add_r_n	; else {
 Lis\@add_r_n:	
 	sgn_rat	\rat,\dst,\dst1
-	cp	\dst1,#1	;  sgn_rat(rat, &dst);
+	cp	\dst1,#1	;  sgn_rat(rat, dst);
 	bra	nz,Lno1\@add_r_n;  if (dst[1] /*denominator*/ == 1) {
 	btss	\dst,#SIGNB	;   if (dst[0] /*numerator*/ >= 0)
 	add	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ + offs;
@@ -312,9 +312,10 @@ Lno1\@add_r_n:
 	sub	\dst,\offs,\dst	;    dst = dst[0] /*numerator*/ - offs;
 	
 	btsc	\dst,#SIGNB	;   if (dst < 0)
-	neg	\dst,\dst	;    dst = 0x8000 | (0x3f8&rat) | (0x7f&-dst);
-	fmt_den	\dst,\rat
-	ior	\rat,\dst,\dst	;   else dst = 0x4000 |(0x3f8&rat)|(0x7f&dst);
+	neg	\dst,\dst	;    dst = 0x8000|(0x3f8&rat)|(0x7f&-(dst-1));
+	dec	\dst,\dst	;
+	fmt_den	\dst,\dst1
+	ior	\rat,\dst,\dst	;   else dst =0x4000|(0x3f8&rat)|(0x7f&(dst-1));
 	reratio	\dst,\dst1
 Lend\@add_r_n:
 .endm
