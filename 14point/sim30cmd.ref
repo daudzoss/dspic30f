@@ -1,0 +1,42 @@
+daudzoss@penguin:~/github/dspic30f/14point$ sim30
+This is the Microchip dsPIC30 simulator version [CLI v4.30.00.00]
+Copyright (c) 2011 Microchip Technology Inc. All rights reserved.
+Device: 'dspic30super'
+Instruction set version [ISA2 Rev A 2003/01/31]
+Program space:-
+[000000..03ffff] Program FLASH
+[7ff000..7fffff] Data FLASH
+[f80000..f8000d] Configuration Registers
+Data space:-
+[0000..ffff] X Data RAM
+[3000..ffff] Y Data RAM
+Simulated Peripherals:-
+HsAdc	Uart1	Uart2	Timer1	Timer2	
+Timer3	Timer4	Timer5	IC1	IC2	
+IC3	IC4	IC5	IOPortA	IOPortB	
+IOPortC	IOPortD	IOPortE	IOPortF	IOPortG	
+KeySequenceEnable	
+dsPIC30> lc test.o
+dsPIC30> bs 1c0
+dsPIC30> db
+1 breakpoint(s) set at:
+#01 @0001c0
+dsPIC30> rp
+dsPIC30> dc
+PC = 000000 040000 goto 0x0
+dsPIC30> ps 100
+dsPIC30> dc
+PC = 000100 200070 mov.w #0x7,w0
+dsPIC30> e
+dsPIC30> dc
+PC = 0001C0 690001 xor.w w2,w1,w0
+dsPIC30> dw
+W Registers Memory dump from 0x0000 to 0x001f
+Loc <  0>  000c 0716 408c 008c 0000 0000 0000 0000
+Loc < 10>  0000 0000 0000 0000 0000 0000 0000 0800
+dsPIC30> s
+dsPIC30> dw
+W Registers Memory dump from 0x0000 to 0x001f
+Loc <  0>  479a 0716 408c 008c 0000 0000 0000 0000
+Loc < 10>  0000 0000 0000 0000 0000 0000 0000 0800
+dsPIC30> 

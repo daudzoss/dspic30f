@@ -35,7 +35,7 @@
 .macro	isratio	w
 	btst.c	\w,#SIGNB	; c = (w < 0); // 1 if a ratio
 	btsc	\w,#FORMATB	; if (w & (1<<FORMATB))
-	btg	SR,#C		;  c = ~c;
+	btg	0x42,#0 ; SR,#C	;  c = ~c;
 .endm
 
 ;;; num: input literal or register int8_t, -128 < num < +128
@@ -128,18 +128,18 @@ not\@reratio:
 	rrnc	\int8,\int8	; // 7-bit numerator now in low 7 bits
 .if restore
 	bra	z,den1\@tointif	; // leaves as ratio if denominator isn't unity
-	btsc	SR,#C		; if (c)
+	btsc	0x42,#0 ; SR,#C	; if (c)
 	bset	\int8,#SIGNB	;  int8 |= 1<<SIGNB; // negative (format left 0)
-	btss	SR,#C		; else
+	btss	0x42,#0 ; SR,#C	; else
 	bset	\int8,#FORMATB	;  int8 |= 1<<FORMATB; // positive (sign left 0)
 	bra	end\@tointif	;
 .else
 	bra	nz,end\@tointif	; if (rat & 0x3f80 == 0) // denominator is one
 .endif
 den1\@tointif:
-	btss	SR,#C		;  if (rat & (1<<SIGNB))
+	btss	0x42,#0 ; SR,#C	;  if (rat & (1<<SIGNB))
 	neg	\int8,\int8	;   int8 = -(rat & 0x007f + 1);// carry is clear
-	btsc	SR,#C		;  else
+	btsc	0x42,#0 ; SR,#C	;  else
 	dec2	\int8,\int8	;   int8 = rat & 0x007f + 1; // carry is clear
 	inc	\int8		;
 end\@tointif:
