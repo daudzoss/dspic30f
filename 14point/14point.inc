@@ -204,48 +204,115 @@ Lno0\@bumprat:
 .macro	sgn_rat	sign,num,den
 	spl_rat	\sign,\num
 	add	#0x101,\num	;
-	lsr	\num,#8,\den	;
-	and	#0xff,\num	;
-	btsc	\sign,#SIGNB	;
-	neg	\num,\num	;
+	lsr	\num,#8,\den	; den = (0x007f & (sign>>7)) + 1;
+	and	#0xff,\num	; num = (0x007f & sign) + 1;
+	btsc	\sign,#SIGNB	; if (sign < 0)
+	neg	\num,\num	;  num = -num;
 .endm
 
 ;;; sign: input register int16_t sxxx xxxx xxxx xxxx
 ;;; den: input/output register ratio_t xxdd dddd dxxx xxxx->sfdd dddd d000 0000
 .macro	fmt_den	sign,den
-	rlnc	\den,\den	;
-	btst.c	\sign,#SIGNB	;
-	rrc	\den,\den	;
-	btss	\den,#SIGNB	;
-	bset	\den,#FORMATB	;
-	btsc	\den,#SIGNB	;
-	bclr	\den,#FORMATB	;
-	lsr	\den,#7,\den	;
-	sl	\den,#7,\den	;
+	rlnc	\den,\den	; // keep format bit opposite of sign bit
+	btst.c	\sign,#SIGNB	; if (sign < 0) {
+	rrc	\den,\den	;  den |= (1 << SIGNB)
+	btss	\den,#SIGNB	;  den &= ~(1 << FORMATB); // ...
+	bset	\den,#FORMATB	; } else {
+	btsc	\den,#SIGNB	;  den &= ~(1 << SIGNB);
+	bclr	\den,#FORMATB	;  den |= 1 << FORMATB; 
+	lsr	\den,#7,\den	; }
+	sl	\den,#7,\den	; den &= 0xff80; // mask off bits for numerator
 .endm
 	
+.macro	mul_ovf	hi,lo,lobits
+	bclr	0x42,#2		; v = 0;
+	btss	hi,#SIGNB	; z = 1;
+	bra	Lpos\@mul_ovf	; if (hi < 0) {
+	comf	hi,hi		;  hi = ~hi;
+	bra	nz,Lend\@mul_ovf;  if (hi) z = 0;
+	comf	lo,hi		;  else hi = ~lo;
+	bra	shf\@mul_ovf	; } else if (hi)
+Lpos\@mul_ovf:
+	cp0	hi,hi		;  z = 0;
+	bra	nz,Lend\@mul_ovf; if (z)
+Lshf\@mul_ovf:
+	lsr	lo,lobits,hi	;  z = (hi >> lobits) == 0;
+Lend\@mul_ovf:
+	btss	0x42,#0		;
+	bset	0x42,#2		; v = ~z;  
+.endm	
+
+.macro	mul_128	hi,lo,if128
+	bclr	0x42,#2		; v = 0;
+	cp0	\hi		;
+	bra	z,Lno0\@mul_128	;
+	cp	\lo,#128	; if ((hi == 0x0000) && (lo == 0x0080) ||
+	bra	z,\if128	;
+	bra	Lend\@mul_128	;     (hi = 0xffff) && (lo == 0xff80))
+Lno0\@mul_128:	
+	com	\hi,\hi		;
+	bra	nz,Lun2\@mul_128;
+	com	\lo,\lo		;
+	xor	\lo,#128	;
+	bra	nz,Lun1\@mul_128;
+	xor	\lo,#128	;
+	com	\lo,\lo		;
+	bra	\if128		;  goto if128;
+Lun1\@mul_128:
+	xor	\lo,#128	;
+	com	\lo,\lo		;
+Lun2\@mul_128:
+	com	\hi,\hi		;
+Lend\@mul_128:	
+.endm
+
 .macro	mul_r_n	rat,by,dst,dst1
 	isratio	\rat
 	bra	c,Lis\@mul_r_n	; if (!isratio(rat))
 	mul.ss	\rat,\by,\dst	;  dst = rat * by;
+	mul_ovf	\dst2,\dst,#14
 	bra	Lend\@mul_r_n	; else {
 Lis\@mul_r_n:
 	sgn_rat	\rat,\dst,\dst1
 	cp	\dst1,#1	;  sgn_rat(rat, &dst);
 	bra	nz,Lno1\@mul_r_n;  if (dst[1] /*denominator*/ == 1)
 	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
+	mul_ovf	\dst2,\dst,#14
 	bra	Lend\@mul_r_n	;  else {
 Lno1\@mul_r_n:	
 	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
-	btsc	\dst,#SIGNB	;   if (dst < 0)
+	mul_128	\dst2,\dst,Lskp\@mul_r_n
+	mul_ovf	\dst2,\dst,#7
+	bra	v,Lend\@mul_r_n	;   if (((dst<0) ? -dst : dst) > 128) v = 1;
+Lskp\@mul_r_n:
+	btsc	\dst,#SIGNB	;   else if (dst < 0)
 	neg	\dst,\dst	;    dst = 0x8000 | (0x3f8&rat) | (0x7f&-dst);
+	lsr	\dst,\dst	;
+	xor	\rat,\by,\dst1	; // recover the sign since dst1 was clobbered
 	fmt_den	\dst1,\rat
 	ior	\rat,\dst,\dst	;   else dst = 0x4000 |(0x3f8&rat)|(0x7f&dst);
 	reratio	\dst,\dst1,0
 Lend\@mul_r_n:
 .endm
 
-.macro	mul_any	rat,by,dst4
+.macro	mul_any	rat1,rat2,dst,dst1,dst2,dst3
+	isratio	\rat1
+	bra	c,Lis1\@mul_any	; if (!isratio(rat1))
+	mul_r_n	\rat2,\rat1,\dst,\dst1
+	bra	Lend\@mul_any	;  mul_r_n(rat2, rat1, dst, dst1);
+Lis1\@mul_any:
+	isratio	\rat2
+	bra	c,Lis2\@mul_any	; else if (!isratio(rat2))
+	mul_r_n	\rat1,\rat2,\dst,\dst1
+	bra	Lend\@mul_any	;  mul_r_n(rat1, rat2, dst, dst1); //fixme: eliminate the 2nd expansion but still maintain rat1 and rat2 by end
+Lis2\@mul_any:
+	sgn_rat \rat1,\dst,\dst1
+	cp	\dst1
+	
+
+
+	
+Lend\@mul_any:
 .endm
 
 .macro	oneover	rat,dst
