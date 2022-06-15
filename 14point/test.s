@@ -1,5 +1,6 @@
 .include "14point.inc"
 .include "crt1_standard.s"	
+
 	.text
 _main:	
 	toratio	#7,w0
@@ -17,8 +18,9 @@ _main:
 	mov	#0x5663,w0	;
 	sub	#0x0101,w0	; w0 = 99.0/70.0; // approx sqrt(3)
 	uns_rat	w0,w0
-;	mul_any	w0,w0,w2	; w2 = w0 * w0; // should be a ratio close to 3
-;	mul_any	w1,w2,w2	; w2 *= w1 /*pi*/; // should be between 9 and 10
+	mul_any	w0,w0,w2,w3,w4,w5
+	mov	w2,w0		; w0 = w0 * w0; // should be a ratio close to 3
+	mul_any	w1,w2,w2,w3,w4,w5; w2 *= w1 /*pi*/; // should be between 9 and 10
 	
 	mov	#-9,w0		;
 	toratio	w0,w0

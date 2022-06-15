@@ -168,6 +168,9 @@ Lend\@tointif:
 	add.b	\tot,\del,\tot	;  tot += del; // make total higher
 .endm
 	
+;;; rat: input ratio_t to adjust
+;;; tmp: register uint16_t, clobbered
+;;; i: literal int1_t increment to adjust by
 .macro	bumprat	rat,tmp,i
 .if (\i)
 	sl	\rat,\tmp	; uint8_t tmp = rat << 1; // numerator*2 in low
@@ -176,14 +179,14 @@ Lend\@tointif:
 	and.b	#0xfe,\rat	; rat &= 0xfffe; // denominator to add/subtract
 	add.b	#0x02,\rat	; rat += 2; // convert 2*0..127 to 2*1...128
 
-	bump_1	\rat,\tmp,\i
+	bump_i	\rat,\tmp,\i
 .if (\i & 1 == 0)
-	bump_1	\rat,\tmp,\i
+	bump_i	\rat,\tmp,\i
 .endif
 	bra	nz,Lno0\@bumprat; for (j=(i<0)?-i:i; j; j--) bump_1(rat,tmp,i);
 	mov	#0x0002,\rat	; if (tmp & 0xfe == 0)
 	mov.b	#0x02,\tmp	;  rat = tmp = 0x0002; // spoof to get 0x0000 
-;	bra	nv,.+?		; // else if (/*overflow condition*/) {}
+;	bra	nov,.+?		; // else if (/*overflow condition*/) {}
 Lno0\@bumprat:	
 	sub.b	#0x02,\rat	; // rat still holds sign, format, denominator:
 	sub.b	#0x02,\tmp	; //  0000 00sf dddd ddd0 -> sfdd dddd d000 0000
@@ -224,19 +227,22 @@ Lno0\@bumprat:
 	sl	\den,#7,\den	; den &= 0xff80; // mask off bits for numerator
 .endm
 	
+;;; hi|lo: register int32_t result of multiplication (MUL.SS or MUL.SU)
+;;; lobits: literal uint4_t number of unsigned bits that lo is allowed to retain
+;;; v flag set (and z flag cleared) if product was unrepresentable (ie overflow)
 .macro	mul_ovf	hi,lo,lobits
 	bclr	0x42,#2		; v = 0;
-	btss	hi,#SIGNB	; z = 1;
+	btss	\hi,#SIGNB	; z = 1;
 	bra	Lpos\@mul_ovf	; if (hi < 0) {
-	comf	hi,hi		;  hi = ~hi;
+	com	\hi,\hi		;  hi = ~hi;
 	bra	nz,Lend\@mul_ovf;  if (hi) z = 0;
-	comf	lo,hi		;  else hi = ~lo;
-	bra	shf\@mul_ovf	; } else if (hi)
+	com	\lo,\hi		;  else hi = ~lo;
+	bra	Lshf\@mul_ovf	; } else if (hi)
 Lpos\@mul_ovf:
-	cp0	hi,hi		;  z = 0;
+	cp0	\hi		;  z = 0;
 	bra	nz,Lend\@mul_ovf; if (z)
 Lshf\@mul_ovf:
-	lsr	lo,lobits,hi	;  z = (hi >> lobits) == 0;
+	lsr	\lo,\lobits,\hi	;  z = (hi >> lobits) == 0;
 Lend\@mul_ovf:
 	btss	0x42,#0		;
 	bset	0x42,#2		; v = ~z;  
@@ -246,20 +252,22 @@ Lend\@mul_ovf:
 	bclr	0x42,#2		; v = 0;
 	cp0	\hi		;
 	bra	z,Lno0\@mul_128	;
-	cp	\lo,#128	; if ((hi == 0x0000) && (lo == 0x0080) ||
-	bra	z,\if128	;
+	xor	#128,\lo	;
+	btsc	0x42,#2		;
+	bset	\lo,#7		;
+	bra	z,\if128	; if ((hi == 0x0000) && (lo == 0x0080) ||
 	bra	Lend\@mul_128	;     (hi = 0xffff) && (lo == 0xff80))
 Lno0\@mul_128:	
 	com	\hi,\hi		;
 	bra	nz,Lun2\@mul_128;
 	com	\lo,\lo		;
-	xor	\lo,#128	;
+	xor	#128,\lo	;
 	bra	nz,Lun1\@mul_128;
-	xor	\lo,#128	;
+	xor	#128,\lo	;
 	com	\lo,\lo		;
 	bra	\if128		;  goto if128;
 Lun1\@mul_128:
-	xor	\lo,#128	;
+	xor	#128,\lo	;
 	com	\lo,\lo		;
 Lun2\@mul_128:
 	com	\hi,\hi		;
@@ -270,20 +278,20 @@ Lend\@mul_128:
 	isratio	\rat
 	bra	c,Lis\@mul_r_n	; if (!isratio(rat))
 	mul.ss	\rat,\by,\dst	;  dst = rat * by;
-	mul_ovf	\dst2,\dst,#14
+	mul_ovf	\dst1,\dst,#14
 	bra	Lend\@mul_r_n	; else {
 Lis\@mul_r_n:
 	sgn_rat	\rat,\dst,\dst1
 	cp	\dst1,#1	;  sgn_rat(rat, &dst);
 	bra	nz,Lno1\@mul_r_n;  if (dst[1] /*denominator*/ == 1)
 	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
-	mul_ovf	\dst2,\dst,#14
+	mul_ovf	\dst1,\dst,#14
 	bra	Lend\@mul_r_n	;  else {
 Lno1\@mul_r_n:	
 	mul.ss	\dst,\by,\dst	;   dst = dst[0] /*numerator*/ * by;
-	mul_128	\dst2,\dst,Lskp\@mul_r_n
-	mul_ovf	\dst2,\dst,#7
-	bra	v,Lend\@mul_r_n	;   if (((dst<0) ? -dst : dst) > 128) v = 1;
+	mul_128	\dst1,\dst,Lskp\@mul_r_n
+	mul_ovf	\dst1,\dst,#7
+	bra	ov,Lend\@mul_r_n	;   if (((dst<0) ? -dst : dst) > 128) v = 1;
 Lskp\@mul_r_n:
 	btsc	\dst,#SIGNB	;   else if (dst < 0)
 	neg	\dst,\dst	;    dst = 0x8000 | (0x3f8&rat) | (0x7f&-dst);
@@ -307,11 +315,24 @@ Lis1\@mul_any:
 	bra	Lend\@mul_any	;  mul_r_n(rat1, rat2, dst, dst1); //fixme: eliminate the 2nd expansion but still maintain rat1 and rat2 by end
 Lis2\@mul_any:
 	sgn_rat \rat1,\dst,\dst1
-	cp	\dst1
-	
-
-
-	
+	sgn_rat	\rat2,\dst2,\dst3
+	mov	\dst,\rat1	; rat1 =/*numerator1*/;  dst2 =/*numerator2*/;
+	mov	\dst1,\rat2	; rat2 =/*denominator1*/;dst3 =/*denominator2*/;
+	mul.ss	\rat1,\dst2,\dst; dst = rat1*dst2; // numerator product "num"
+	mul.ss \rat2,\dst3,\dst2; dst2 = rat2*dst3; // denominator product "den"
+	mul_128	\dst1,\dst,Lskp\@mul_any
+	mul_128	\dst3,\dst2,Lskp\@mul_any
+	mul_ovf	\dst1,\dst,#7
+	mul_ovf	\dst3,\dst2,#7
+	bra	ov,Lend\@mul_any	;
+Lskp\@mul_any:
+	sl	\dst2,#7,\dst2	; dst2 <<= 7; // den positive, shift into place
+	mov	\dst,\dst1	; dst1 = dst; // preserve sign
+	btsc	\dst,#SIGNB	; if (dst < 0)
+	neg	\dst,\dst	;  dst = -dst; // absolute value
+	fmt_den	\dst1,\dst2
+	ior	\dst,\dst2,\dst	; dst = 0x4000 |(0x3f8&rat)|(0x7f&dst);
+	reratio	\dst,\dst1,0
 Lend\@mul_any:
 .endm
 
@@ -328,8 +349,18 @@ Lend\@mul_any:
 Lend\@oneover:
 .endm	
 
-.macro	div_any	rat,tmp2
-
+;;; A/B = A * (1/B) = 1/[(1/A) * B]
+.macro	div_r_n	rat1,rat2,dst,dst1,dst2,dst3
+	isratio	\rat1
+	bra	nc,Lend\@div_r_n; if (isratio(rat1)) {
+	oneover	\rat1,\dst
+	mov	\dst,\rat1	;  dst = (rat1 = 1.0 / rat1) * rat2;
+	mul_r_n	\rat1,\rat2,\dst,\dst1,\dst2,\dst3
+	mov	\dst,\dst1	;  dst = 1.0 / dst;
+	oneover	\dst1,\dst
+	mov	\rat1,\dst1	;  rat1 = 1.0 / rat1; }
+	oneover	\dst1,\rat1
+Lend\@div_r_n:
 .endm
 
 .macro 	inc_any	rat,tmp,i
