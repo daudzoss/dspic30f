@@ -312,19 +312,42 @@ Lis1\@mul_any:
 	isratio	\rat2
 	bra	c,Lis2\@mul_any	; else if (!isratio(rat2))
 	mul_r_n	\rat1,\rat2,\dst,\dst1
-	bra	Lend\@mul_any	;  mul_r_n(rat1, rat2, dst, dst1); //fixme: eliminate the 2nd expansion but still maintain rat1 and rat2 by end
+	bra	Lend\@mul_any	;  mul_r_n(rat1, rat2, dst, dst1); else { //fixme: eliminate the 2nd expansion but still maintain rat1 and rat2 by end
 Lis2\@mul_any:
 	sgn_rat \rat1,\dst,\dst1
 	sgn_rat	\rat2,\dst2,\dst3
-	mov	\dst,\rat1	; rat1 =/*numerator1*/;  dst2 =/*numerator2*/;
-	mov	\dst1,\rat2	; rat2 =/*denominator1*/;dst3 =/*denominator2*/;
-	mul.ss	\rat1,\dst2,\dst; dst = rat1*dst2; // numerator product "num"
-	mul.ss \rat2,\dst3,\dst2; dst2 = rat2*dst3; // denominator product "den"
-	mul_128	\dst1,\dst,Lskp\@mul_any
-	mul_128	\dst3,\dst2,Lskp\@mul_any
+	mov	\dst,\rat1	;  rat1 = /*num1*/; dst2 = /*num2*/;
+	mov	\dst1,\rat2	;  rat2 = /*den1*/; dst3 = /*den2*/;
+	mul.ss	\rat1,\dst2,\dst;  dst = rat1*dst2; // num, numerator product
+	mul.uu \rat2,\dst3,\dst2;  dst2 = rat2*dst3; // den, denominator product
+	bclr	0x42,#0		;
+	rrc	\dst3,\dst3	;
+	bra	nz,Lrot\@mul_any-2;
+	rrc	\dst2,\dst2	;
+	bra	nz,Lrot\@mul_any-4;
+	mul_ovf	\dst1,\dst,#14
+	bra	Lend\@mul_any	;
+;;; Lrot\@mul_any-4:
+	rlc	\dst3,\dst3	;
+;;; Lrot\@mul_any-2:
+	rlc	\dst3,\dst3	;  if (dst2 /*den*/ != 1) { // not a simple case
+Lrot\@mul_any:
+	mul_128	\dst1,\dst,Lnov\@mul_any
 	mul_ovf	\dst1,\dst,#7
+	bra	nov,Lnov\@mul_any;  while (dst /*num*/ > (1<<7) /*128*/) {
+	btst.c	\dst1,#SIGNB	;   
+	asr	\dst1,#1,\dst1	;
+	rrc	\dst,\dst	;    dst /*num*/ /= 2; // signed
+	bclr	0x42,#0		;
+	rrc	\dst3,\dst3	;
+	rrc	\dst2,\dst2	;    dst2 /*den*/ /= 2; // unsigned
+	bra	Lrot\@mul_any	;   }
+Lnov\@mul_any:	
+	mul_128	\dst3,\dst2,Lskp\@mul_any
 	mul_ovf	\dst3,\dst2,#7
-	bra	ov,Lend\@mul_any	;
+	bra	nov,Lskp\@mul_any;
+	xor	\dst,\dst,\dst	; dst = 0;
+	bra	Lend\@mul_any	;
 Lskp\@mul_any:
 	sl	\dst2,#7,\dst2	; dst2 <<= 7; // den positive, shift into place
 	mov	\dst,\dst1	; dst1 = dst; // preserve sign
