@@ -77,6 +77,9 @@ Lend\@toratio:
 	lsr	\packed,\packed	; packed = ((0x7f00&numden)>>1)|(0x007f&numden);
 .endm
 	
+;;; numden: input register ratio_t in the format 00dd dddd dnnn nnnn
+;;; sf: input register ratio_t in the format sf00 0000 0000 0000
+;;; sf: output register ratio_t in the format sfdd dddd dnnn nnnn
 .macro	combine	numden,sf
 	lsr	\sf,#14,\sf	;
 	sl	\sf,#14,\sf	; sf &= 0xc000;

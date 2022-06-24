@@ -1,3 +1,6 @@
+test.dis : test.elf
+	$(HOME)/bin/xc16-objdump -D test.elf > test.dis
+
 test.elf : test.o
 	$(HOME)/bin/xc16-ld -o test.elf test.o
 
